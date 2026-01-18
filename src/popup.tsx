@@ -1,7 +1,11 @@
 import React from "react"
 import { useEffect, useState } from "react"
+import "./style.css"
 import { initializeGemini, sendPromptWithStreaming } from "~gemini"
 import Burny, { type BurnyExpression } from "./components/Burny"
+// TEMPORARILY DISABLED - Plaid integration
+// import { PlaidLinkButton, ConnectedAccounts } from "./components/PlaidLinkButton"
+// import PlaidSubscriptions from "./components/PlaidSubscriptions"
 
 interface Subscription {
   id: string
@@ -10,6 +14,7 @@ interface Subscription {
   visit_count: number
   last_visit: string
   total_time_seconds: number
+  wasted_days_this_month: number
   user_id: string
   created_at: string
   updated_at: string
@@ -114,6 +119,10 @@ function IndexPopup() {
   const [editing, setEditing] = useState<Subscription | null>(null)
   const [editName, setEditName] = useState("")
   const [editUrl, setEditUrl] = useState("")
+  
+  // TEMPORARILY DISABLED - Plaid state
+  // const [activeTab, setActiveTab] = useState<"plaid" | "manual">("plaid")
+  // const [plaidRefreshKey, setPlaidRefreshKey] = useState(0)
 
   // Debug state
   const [debugExpanded, setDebugExpanded] = useState<string | null>(null)
@@ -192,7 +201,7 @@ function IndexPopup() {
 
     const interval = setInterval(() => {
       fetchSubscriptions(userId, true) // Silent refresh - no loading state
-    }, 3000)
+    }, 5000)
 
     return () => clearInterval(interval)
   }, [userId, view])
@@ -402,16 +411,35 @@ Rules:
     }
   }
 
+  // TEMPORARILY DISABLED - Plaid
+  // const handlePlaidSuccess = () => {
+  //   setPlaidRefreshKey(prev => prev + 1)
+  //   setBurnyExpression("happy")
+  // }
+
   // Render home view
   if (view === "home") {
+    // Calculate total money wasted across all subscriptions
+    const totalMoneyWasted = subscriptions.reduce((total, sub) => {
+      const monthlyPrice = getMonthlyPrice(sub.url)
+      if (!monthlyPrice) return total
+      const totalWastedDays = calculateTotalWastedDays(sub)
+      const wasted = calculateMoneyWasted(totalWastedDays, monthlyPrice)
+      console.log(`[DEBUG] ${sub.name}: wastedDays=${totalWastedDays}, price=${monthlyPrice}, wasted=$${wasted.toFixed(2)}`)
+      return total + wasted
+    }, 0)
+    console.log(`[DEBUG] Total subscriptions: ${subscriptions.length}, Total money wasted: $${totalMoneyWasted.toFixed(2)}`)
+
     return (
       <div
         style={{
-          width: 350,
+          width: 380,
           maxHeight: 600,
           overflowY: "auto",
           padding: 16,
-          fontFamily: "system-ui, -apple-system, sans-serif"
+          fontFamily: "system-ui, -apple-system, sans-serif",
+          border: "3px solid #F97316",
+          background: "#FAFAFA"
         }}>
         <h2 style={{ margin: "0 0 16px 0", fontSize: 18 }}>
           RoastMySubs
@@ -468,11 +496,13 @@ Rules:
   return (
     <div
       style={{
-        width: 350,
+        width: 380,
         maxHeight: 600,
         overflowY: "auto",
         padding: 16,
-        fontFamily: "system-ui, -apple-system, sans-serif"
+        fontFamily: "system-ui, -apple-system, sans-serif",
+        border: "3px solid #F97316",
+        background: "#FAFAFA"
       }}>
       {/* Header with back button */}
       <div style={{ display: "flex", alignItems: "center", marginBottom: 16, gap: 8 }}>
@@ -519,7 +549,7 @@ Rules:
           </div>
         ) : subscriptions.length === 0 ? (
           <div style={{ textAlign: "center", color: "#666", padding: 20, fontSize: 13 }}>
-            No subscriptions yet. Add one above!
+            No subscriptions yet. Add one below!
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -540,16 +570,24 @@ Rules:
                 return `${Math.floor(diffDays / 365)} years ago`
               }
 
-              // Format total time
+              // Format total time (more detailed for cost analysis)
               const formatTotalTime = (seconds: number) => {
                 if (seconds < 60) return `${seconds}s`
-                const minutes = Math.floor(seconds / 60)
-                if (minutes < 60) return `${minutes}m`
-                const hours = Math.floor(minutes / 60)
-                if (hours < 24) return `${hours}h`
+                const totalMinutes = Math.floor(seconds / 60)
+                const hours = Math.floor(totalMinutes / 60)
+                const minutes = totalMinutes % 60
+                if (hours === 0) return `${minutes}m`
+                if (hours < 24) return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`
                 const days = Math.floor(hours / 24)
-                return `${days}d`
+                const remainingHours = hours % 24
+                return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`
               }
+
+              // Get price info for this subscription
+              const monthlyPrice = getMonthlyPrice(sub.url)
+              const dollarPerHour = monthlyPrice && sub.total_time_seconds > 0
+                ? calculateDollarPerHour(sub.total_time_seconds, monthlyPrice)
+                : null
 
               return (
                 <div
@@ -591,35 +629,75 @@ Rules:
                         <span>•</span>
                         <span>Time: {formatTotalTime(sub.total_time_seconds)}</span>
                       </div>
+                      {/* Cost Analysis */}
+                      {monthlyPrice && (
+                        <div style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 4,
+                          fontSize: 11,
+                          marginTop: 4,
+                        }}>
+                          {/* $/Hour Row */}
+                          <div style={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            gap: 8,
+                            padding: "4px 8px",
+                            background: !dollarPerHour || dollarPerHour > 100 ? "#FEE2E2" : dollarPerHour >= 1 ? "#FEF3C7" : "#D1FAE5",
+                            borderRadius: 4
+                          }}>
+                            <span style={{ fontWeight: 500 }}>${monthlyPrice.toFixed(2)}/mo</span>
+                            <span>•</span>
+                            <span style={{
+                              fontWeight: 600,
+                              color: !dollarPerHour || dollarPerHour > 100 ? "#DC2626" : dollarPerHour >= 1 ? "#B45309" : "#059669"
+                            }}>
+                              {dollarPerHour
+                                ? `$${dollarPerHour.toFixed(2)}/hr`
+                                : "No usage yet"}
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                     <div style={{ display: "flex", gap: 4, flexShrink: 0, marginLeft: 8 }}>
                       <button
                         onClick={() => openEdit(sub)}
                         style={{
-                          padding: "6px 10px",
-                          borderRadius: 4,
+                          width: 32,
+                          height: 32,
+                          borderRadius: 6,
                           border: "1px solid #E5E7EB",
                           background: "white",
                           cursor: "pointer",
-                          fontSize: 11,
-                          fontWeight: 500,
-                          color: "#374151"
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center"
                         }}>
-                        Edit
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                          <path d="m15 5 4 4"/>
+                        </svg>
                       </button>
                       <button
                         onClick={() => handleDelete(sub.id)}
                         style={{
-                          padding: "6px 10px",
-                          borderRadius: 4,
+                          width: 32,
+                          height: 32,
+                          borderRadius: 6,
                           border: "none",
                           background: "#EF4444",
-                          color: "white",
-                          fontSize: 11,
-                          fontWeight: 500,
-                          cursor: "pointer"
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center"
                         }}>
-                        Del
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M3 6h18"/>
+                          <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                          <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                        </svg>
                       </button>
                     </div>
                   </div>
@@ -723,7 +801,7 @@ Rules:
               padding: "8px 12px",
               borderRadius: 6,
               border: "none",
-              background: "#4F46E5",
+              background: "#F97316",
               color: "white",
               fontSize: 13,
               fontWeight: 500,

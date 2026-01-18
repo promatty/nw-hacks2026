@@ -10,6 +10,7 @@ export interface Subscription {
   visit_count: number;
   total_time_seconds: number;
   last_visit: string;
+  wasted_days_this_month: number;
   updated_at: string;
   created_at: string;
 }
@@ -75,6 +76,7 @@ export interface UpdateSubscriptionRequest {
   url?: string;
   visit_count?: number;
   total_time_seconds?: number;
+  wasted_days_this_month?: number;
 }
 
 export interface RecordVisitRequest {
