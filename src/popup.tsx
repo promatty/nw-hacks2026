@@ -14,12 +14,70 @@ interface Subscription {
   visit_count: number
   last_visit: string
   total_time_seconds: number
+  wasted_days_this_month: number
   user_id: string
   created_at: string
   updated_at: string
 }
 
 const API_BASE = "http://localhost:3000/api"
+
+// Hardcoded CAD prices for common services
+const SERVICE_PRICES_CAD: Record<string, number> = {
+  'netflix.com': 16.49,
+  'spotify.com': 11.99,
+  'disneyplus.com': 11.99,
+  'youtube.com': 13.99,
+  'primevideo.com': 9.99,
+  'amazon.com': 9.99,
+  'max.com': 16.99,
+  'hulu.com': 9.99,
+  'apple.com': 12.99,
+  'tv.apple.com': 12.99,
+  'crunchyroll.com': 12.99,
+}
+
+// Get monthly price for a subscription URL
+function getMonthlyPrice(url: string | null): number | null {
+  if (!url) return null
+  try {
+    const hostname = new URL(url.startsWith('http') ? url : `https://${url}`).hostname.toLowerCase()
+    // Check exact match first
+    for (const [domain, price] of Object.entries(SERVICE_PRICES_CAD)) {
+      if (hostname === domain || hostname.endsWith('.' + domain)) {
+        return price
+      }
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+// Calculate $/hour rate
+function calculateDollarPerHour(totalSeconds: number, monthlyPrice: number): number | null {
+  const hours = totalSeconds / 3600
+  if (hours <= 0) return null
+  return monthlyPrice / hours
+}
+
+// Calculate money wasted this month
+function calculateMoneyWasted(wastedDays: number, monthlyPrice: number): number {
+  return (wastedDays / 30) * monthlyPrice
+}
+
+// Calculate days since last visit (simple version for demo)
+function calculateTotalWastedDays(subscription: Subscription): number {
+  if (!subscription.last_visit) {
+    return 0
+  }
+
+  const now = new Date()
+  const lastVisit = new Date(subscription.last_visit)
+  const daysSinceLastVisit = Math.floor((now.getTime() - lastVisit.getTime()) / (1000 * 60 * 60 * 24))
+
+  return Math.max(0, daysSinceLastVisit)
+}
 
 function generateUUID(): string {
   return crypto.randomUUID()
@@ -130,13 +188,13 @@ function IndexPopup() {
     }
   }, [userId])
 
-  // Auto-refresh subscriptions every 3 seconds when in manager view
+  // Auto-refresh subscriptions every 30 seconds when in manager view
   useEffect(() => {
     if (!userId || view !== "manager") return
 
     const interval = setInterval(() => {
       fetchSubscriptions(userId, true) // Silent refresh - no loading state
-    }, 3000)
+    }, 5000)
 
     return () => clearInterval(interval)
   }, [userId, view])
@@ -281,6 +339,17 @@ days since last used: ${daysSinceLastPlay}`
 
   // Render home view
   if (view === "home") {
+    // Calculate total money wasted across all subscriptions
+    const totalMoneyWasted = subscriptions.reduce((total, sub) => {
+      const monthlyPrice = getMonthlyPrice(sub.url)
+      if (!monthlyPrice) return total
+      const totalWastedDays = calculateTotalWastedDays(sub)
+      const wasted = calculateMoneyWasted(totalWastedDays, monthlyPrice)
+      console.log(`[DEBUG] ${sub.name}: wastedDays=${totalWastedDays}, price=${monthlyPrice}, wasted=$${wasted.toFixed(2)}`)
+      return total + wasted
+    }, 0)
+    console.log(`[DEBUG] Total subscriptions: ${subscriptions.length}, Total money wasted: $${totalMoneyWasted.toFixed(2)}`)
+
     return (
       <div
         style={{
@@ -327,6 +396,33 @@ days since last used: ${daysSinceLastPlay}`
             size={120}
           />
         </div>
+
+        {/* Total Money Wasted */}
+        {totalMoneyWasted > 0 && (() => {
+          const isGreen = totalMoneyWasted < 5
+          const isYellow = totalMoneyWasted >= 5 && totalMoneyWasted <= 20
+          const bgColor = isGreen ? "#D1FAE5" : isYellow ? "#FEF3C7" : "#FEE2E2"
+          const borderColor = isGreen ? "#059669" : isYellow ? "#D97706" : "#DC2626"
+          const textColor = isGreen ? "#059669" : isYellow ? "#B45309" : "#DC2626"
+          const subTextColor = isGreen ? "#047857" : isYellow ? "#92400E" : "#991B1B"
+          return (
+            <div style={{
+              marginBottom: 16,
+              padding: "12px 16px",
+              background: bgColor,
+              border: `2px solid ${borderColor}`,
+              borderRadius: 8,
+              textAlign: "center"
+            }}>
+              <div style={{ fontSize: 24, fontWeight: 700, color: textColor }}>
+                ${totalMoneyWasted.toFixed(2)} wasted
+              </div>
+              <div style={{ fontSize: 12, color: subTextColor, marginTop: 4 }}>
+                since last use
+              </div>
+            </div>
+          )
+        })()}
 
         {/* Connected Accounts & Plaid Link */}
         {userId && (
@@ -549,16 +645,24 @@ days since last used: ${daysSinceLastPlay}`
                 return `${Math.floor(diffDays / 365)} years ago`
               }
 
-              // Format total time
+              // Format total time (more detailed for cost analysis)
               const formatTotalTime = (seconds: number) => {
                 if (seconds < 60) return `${seconds}s`
-                const minutes = Math.floor(seconds / 60)
-                if (minutes < 60) return `${minutes}m`
-                const hours = Math.floor(minutes / 60)
-                if (hours < 24) return `${hours}h`
+                const totalMinutes = Math.floor(seconds / 60)
+                const hours = Math.floor(totalMinutes / 60)
+                const minutes = totalMinutes % 60
+                if (hours === 0) return `${minutes}m`
+                if (hours < 24) return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`
                 const days = Math.floor(hours / 24)
-                return `${days}d`
+                const remainingHours = hours % 24
+                return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`
               }
+
+              // Get price info for this subscription
+              const monthlyPrice = getMonthlyPrice(sub.url)
+              const dollarPerHour = monthlyPrice && sub.total_time_seconds > 0
+                ? calculateDollarPerHour(sub.total_time_seconds, monthlyPrice)
+                : null
 
               return (
                 <div
@@ -600,35 +704,75 @@ days since last used: ${daysSinceLastPlay}`
                         <span>•</span>
                         <span>Time: {formatTotalTime(sub.total_time_seconds)}</span>
                       </div>
+                      {/* Cost Analysis */}
+                      {monthlyPrice && (
+                        <div style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 4,
+                          fontSize: 11,
+                          marginTop: 4,
+                        }}>
+                          {/* $/Hour Row */}
+                          <div style={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            gap: 8,
+                            padding: "4px 8px",
+                            background: !dollarPerHour || dollarPerHour > 100 ? "#FEE2E2" : dollarPerHour >= 1 ? "#FEF3C7" : "#D1FAE5",
+                            borderRadius: 4
+                          }}>
+                            <span style={{ fontWeight: 500 }}>${monthlyPrice.toFixed(2)}/mo</span>
+                            <span>•</span>
+                            <span style={{
+                              fontWeight: 600,
+                              color: !dollarPerHour || dollarPerHour > 100 ? "#DC2626" : dollarPerHour >= 1 ? "#B45309" : "#059669"
+                            }}>
+                              {dollarPerHour
+                                ? `$${dollarPerHour.toFixed(2)}/hr`
+                                : "No usage yet"}
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                     <div style={{ display: "flex", gap: 4, flexShrink: 0, marginLeft: 8 }}>
                       <button
                         onClick={() => openEdit(sub)}
                         style={{
-                          padding: "6px 10px",
-                          borderRadius: 4,
+                          width: 32,
+                          height: 32,
+                          borderRadius: 6,
                           border: "1px solid #E5E7EB",
                           background: "white",
                           cursor: "pointer",
-                          fontSize: 11,
-                          fontWeight: 500,
-                          color: "#374151"
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center"
                         }}>
-                        Edit
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                          <path d="m15 5 4 4"/>
+                        </svg>
                       </button>
                       <button
                         onClick={() => handleDelete(sub.id)}
                         style={{
-                          padding: "6px 10px",
-                          borderRadius: 4,
+                          width: 32,
+                          height: 32,
+                          borderRadius: 6,
                           border: "none",
                           background: "#EF4444",
-                          color: "white",
-                          fontSize: 11,
-                          fontWeight: 500,
-                          cursor: "pointer"
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center"
                         }}>
-                        Del
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M3 6h18"/>
+                          <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                          <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                        </svg>
                       </button>
                     </div>
                   </div>
