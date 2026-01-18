@@ -1,5 +1,6 @@
 import React from "react"
 import { useEffect, useState } from "react"
+import "./style.css"
 import { initializeGemini, sendPromptWithStreaming } from "~gemini"
 import spotifyData from "./data/spotify-listening-history.json"
 import Burny, { type BurnyExpression } from "./components/Burny"
@@ -288,6 +289,7 @@ days since last used: ${daysSinceLastPlay}`
           overflowY: "auto",
           padding: 16,
           fontFamily: "system-ui, -apple-system, sans-serif",
+          border: "3px solid #F97316"
           background: "#FAFAFA"
         }}>
         {/* Header */}
@@ -446,8 +448,25 @@ days since last used: ${daysSinceLastPlay}`
                 +
               </button>
             </div>
-          </>
-        )}
+          )}
+        </div>
+
+        {/* Manage Subscriptions Button */}
+        <button
+          onClick={() => setView("manager")}
+          style={{
+            padding: "8px 16px",
+            borderRadius: 6,
+            border: "none",
+            background: "#F97316",
+            color: "white",
+            fontSize: 14,
+            fontWeight: 500,
+            cursor: "pointer",
+            width: "100%"
+          }}>
+          Manage Subscriptions
+        </button>
       </div>
     )
   }
@@ -461,6 +480,7 @@ days since last used: ${daysSinceLastPlay}`
         overflowY: "auto",
         padding: 16,
         fontFamily: "system-ui, -apple-system, sans-serif",
+        border: "3px solid #F97316"
         background: "#FAFAFA"
       }}>
       {/* Header with back button */}
@@ -662,7 +682,7 @@ days since last used: ${daysSinceLastPlay}`
               padding: "8px 12px",
               borderRadius: 6,
               border: "none",
-              background: "#4F46E5",
+              background: "#F97316",
               color: "white",
               fontSize: 13,
               fontWeight: 500,

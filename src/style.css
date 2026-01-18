@@ -1,0 +1,5 @@
+/* Reset default browser styles for popup */
+html, body {
+  margin: 0;
+  padding: 0;
+}
