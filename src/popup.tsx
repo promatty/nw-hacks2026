@@ -4,6 +4,8 @@ import "./style.css"
 import { initializeGemini, sendPromptWithStreaming } from "~gemini"
 import spotifyData from "./data/spotify-listening-history.json"
 import Burny, { type BurnyExpression } from "./components/Burny"
+import { PlaidLinkButton, ConnectedAccounts } from "./components/PlaidLinkButton"
+import PlaidSubscriptions from "./components/PlaidSubscriptions"
 
 interface Subscription {
   id: string
@@ -72,6 +74,10 @@ function IndexPopup() {
   const [editing, setEditing] = useState<Subscription | null>(null)
   const [editName, setEditName] = useState("")
   const [editUrl, setEditUrl] = useState("")
+  
+  // Plaid state
+  const [activeTab, setActiveTab] = useState<"plaid" | "manual">("plaid")
+  const [plaidRefreshKey, setPlaidRefreshKey] = useState(0)
 
   useEffect(() => {
     getUserId().then((id) => {
@@ -268,61 +274,179 @@ days since last used: ${daysSinceLastPlay}`
     }
   }
 
+  const handlePlaidSuccess = () => {
+    setPlaidRefreshKey(prev => prev + 1)
+    setBurnyExpression("happy")
+  }
+
   // Render home view
   if (view === "home") {
     return (
       <div
         style={{
-          width: 350,
+          width: 380,
           maxHeight: 600,
           overflowY: "auto",
           padding: 16,
           fontFamily: "system-ui, -apple-system, sans-serif",
           border: "3px solid #F97316"
+          background: "#FAFAFA"
         }}>
-        <h2 style={{ margin: "0 0 16px 0", fontSize: 18 }}>
-          RoastMySubs
-        </h2>
+        {/* Header */}
+        <div style={{ 
+          display: "flex", 
+          alignItems: "center", 
+          justifyContent: "space-between",
+          marginBottom: 16
+        }}>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: "#111827" }}>
+            🔥 RoastMySubs
+          </h2>
+          <button
+            onClick={testGemini}
+            disabled={geminiLoading}
+            style={{
+              padding: "6px 12px",
+              borderRadius: 6,
+              border: "none",
+              background: geminiLoading ? "#9CA3AF" : "#10A37F",
+              color: "white",
+              fontSize: 12,
+              fontWeight: 500,
+              cursor: geminiLoading ? "not-allowed" : "pointer",
+            }}>
+            {geminiLoading ? "..." : "🤖 Roast Me"}
+          </button>
+        </div>
 
         {/* Burny Mascot */}
         <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'center' }}>
           <Burny
             expression={burnyExpression}
-            message={geminiResponse || "Click below to check your Spotify usage!"}
-            size={150}
+            message={geminiResponse || "Connect your bank to track subscriptions!"}
+            size={120}
           />
         </div>
 
-        {/* Gemini Test Button */}
-        <div style={{ marginBottom: 16 }}>
+        {/* Connected Accounts & Plaid Link */}
+        {userId && (
+          <div style={{ marginBottom: 16 }}>
+            <ConnectedAccounts 
+              userId={userId} 
+              onDisconnect={() => setPlaidRefreshKey(prev => prev + 1)}
+            />
+            <PlaidLinkButton 
+              userId={userId} 
+              onSuccess={handlePlaidSuccess}
+            />
+          </div>
+        )}
+
+        {/* Tabs */}
+        <div style={{ 
+          display: "flex", 
+          gap: 4, 
+          marginBottom: 12,
+          background: "#E5E7EB",
+          padding: 4,
+          borderRadius: 8
+        }}>
           <button
-            onClick={testGemini}
-            disabled={geminiLoading}
+            onClick={() => setActiveTab("plaid")}
             style={{
-              padding: "8px 16px",
+              flex: 1,
+              padding: "8px 12px",
               borderRadius: 6,
               border: "none",
-              background: "#10A37F",
-              color: "white",
-              fontSize: 14,
-              cursor: geminiLoading ? "not-allowed" : "pointer",
-              opacity: geminiLoading ? 0.6 : 1,
-              width: "100%"
+              background: activeTab === "plaid" ? "#FFFFFF" : "transparent",
+              color: activeTab === "plaid" ? "#111827" : "#6B7280",
+              fontSize: 13,
+              fontWeight: 500,
+              cursor: "pointer",
+              boxShadow: activeTab === "plaid" ? "0 1px 2px rgba(0,0,0,0.1)" : "none"
             }}>
-            {geminiLoading ? "Testing Gemini..." : "Test Gemini"}
+            💳 Auto-Detected
           </button>
-          {geminiResponse && (
-            <div
+          <button
+            onClick={() => setActiveTab("manual")}
+            style={{
+              flex: 1,
+              padding: "8px 12px",
+              borderRadius: 6,
+              border: "none",
+              background: activeTab === "manual" ? "#FFFFFF" : "transparent",
+              color: activeTab === "manual" ? "#111827" : "#6B7280",
+              fontSize: 13,
+              fontWeight: 500,
+              cursor: "pointer",
+              boxShadow: activeTab === "manual" ? "0 1px 2px rgba(0,0,0,0.1)" : "none"
+            }}>
+            ✏️ Manual
+          </button>
+        </div>
+
+        {/* Plaid Subscriptions Tab */}
+        {activeTab === "plaid" && userId && (
+          <div key={plaidRefreshKey}>
+            <PlaidSubscriptions userId={userId} useMockData={false} />
+          </div>
+        )}
+
+        {/* Manual Subscriptions Tab */}
+        {activeTab === "manual" && (
+          <>
+            {/* Manage Subscriptions Button */}
+            <button
+              onClick={() => setView("manager")}
               style={{
-                marginTop: 8,
-                padding: "8px 12px",
-                background: "#F0F9FF",
-                border: "1px solid #BAE6FD",
-                borderRadius: 6,
-                fontSize: 13,
-                color: "#0C4A6E"
+                padding: "12px 16px",
+                borderRadius: 8,
+                border: "1px solid #4F46E5",
+                background: "white",
+                color: "#4F46E5",
+                fontSize: 14,
+                fontWeight: 500,
+                cursor: "pointer",
+                width: "100%",
+                marginBottom: 12
               }}>
-              {geminiResponse}
+              📝 Manage Manual Subscriptions
+            </button>
+            
+            {/* Quick add form */}
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                type="text"
+                placeholder="Add subscription..."
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={handleKeyDown}
+                disabled={adding}
+                style={{
+                  flex: 1,
+                  padding: "8px 12px",
+                  borderRadius: 6,
+                  border: "1px solid #ddd",
+                  fontSize: 13,
+                  outline: "none"
+                }}
+              />
+              <button
+                onClick={handleAdd}
+                disabled={adding || !newName.trim()}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: 6,
+                  border: "none",
+                  background: "#4F46E5",
+                  color: "white",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  cursor: adding || !newName.trim() ? "not-allowed" : "pointer",
+                  opacity: adding || !newName.trim() ? 0.6 : 1
+                }}>
+                +
+              </button>
             </div>
           )}
         </div>
@@ -351,12 +475,13 @@ days since last used: ${daysSinceLastPlay}`
   return (
     <div
       style={{
-        width: 350,
+        width: 380,
         maxHeight: 600,
         overflowY: "auto",
         padding: 16,
         fontFamily: "system-ui, -apple-system, sans-serif",
         border: "3px solid #F97316"
+        background: "#FAFAFA"
       }}>
       {/* Header with back button */}
       <div style={{ display: "flex", alignItems: "center", marginBottom: 16, gap: 8 }}>
@@ -403,7 +528,7 @@ days since last used: ${daysSinceLastPlay}`
           </div>
         ) : subscriptions.length === 0 ? (
           <div style={{ textAlign: "center", color: "#666", padding: 20, fontSize: 13 }}>
-            No subscriptions yet. Add one above!
+            No subscriptions yet. Add one below!
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
