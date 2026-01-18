@@ -550,7 +550,15 @@ Rules:
 
         {/* Targeted Subscription Name */}
         {targetedSubscription && daysSinceLastUsed !== null && (
-          <div
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              type: "spring",
+              stiffness: 400,
+              damping: 15,
+              duration: 0.3
+            }}
             style={{
               marginBottom: 8,
               padding: "6px 12px",
@@ -563,7 +571,7 @@ Rules:
               textAlign: "center"
             }}>
             {`You haven't used ${targetedSubscription} in ${daysSinceLastUsed} day${daysSinceLastUsed === 1 ? '' : 's'}`}
-          </div>
+          </motion.div>
         )}
 
         {/* Burny Mascot */}
