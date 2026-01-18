@@ -4,8 +4,9 @@ import "./style.css"
 import { initializeGemini, sendPromptWithStreaming } from "~gemini"
 import spotifyData from "./data/spotify-listening-history.json"
 import Burny, { type BurnyExpression } from "./components/Burny"
-import { PlaidLinkButton, ConnectedAccounts } from "./components/PlaidLinkButton"
-import PlaidSubscriptions from "./components/PlaidSubscriptions"
+// TEMPORARILY DISABLED - Plaid integration
+// import { PlaidLinkButton, ConnectedAccounts } from "./components/PlaidLinkButton"
+// import PlaidSubscriptions from "./components/PlaidSubscriptions"
 
 interface Subscription {
   id: string
@@ -133,9 +134,9 @@ function IndexPopup() {
   const [editName, setEditName] = useState("")
   const [editUrl, setEditUrl] = useState("")
   
-  // Plaid state
-  const [activeTab, setActiveTab] = useState<"plaid" | "manual">("plaid")
-  const [plaidRefreshKey, setPlaidRefreshKey] = useState(0)
+  // TEMPORARILY DISABLED - Plaid state
+  // const [activeTab, setActiveTab] = useState<"plaid" | "manual">("plaid")
+  // const [plaidRefreshKey, setPlaidRefreshKey] = useState(0)
 
   useEffect(() => {
     getUserId().then((id) => {
@@ -332,10 +333,11 @@ days since last used: ${daysSinceLastPlay}`
     }
   }
 
-  const handlePlaidSuccess = () => {
-    setPlaidRefreshKey(prev => prev + 1)
-    setBurnyExpression("happy")
-  }
+  // TEMPORARILY DISABLED - Plaid
+  // const handlePlaidSuccess = () => {
+  //   setPlaidRefreshKey(prev => prev + 1)
+  //   setBurnyExpression("happy")
+  // }
 
   // Render home view
   if (view === "home") {
@@ -424,24 +426,24 @@ days since last used: ${daysSinceLastPlay}`
           )
         })()}
 
-        {/* Connected Accounts & Plaid Link */}
-        {userId && (
+        {/* TEMPORARILY DISABLED - Connected Accounts & Plaid Link */}
+        {/* {userId && (
           <div style={{ marginBottom: 16 }}>
-            <ConnectedAccounts 
-              userId={userId} 
+            <ConnectedAccounts
+              userId={userId}
               onDisconnect={() => setPlaidRefreshKey(prev => prev + 1)}
             />
-            <PlaidLinkButton 
-              userId={userId} 
+            <PlaidLinkButton
+              userId={userId}
               onSuccess={handlePlaidSuccess}
             />
           </div>
-        )}
+        )} */}
 
-        {/* Tabs */}
-        <div style={{ 
-          display: "flex", 
-          gap: 4, 
+        {/* TEMPORARILY DISABLED - Tabs */}
+        {/* <div style={{
+          display: "flex",
+          gap: 4,
           marginBottom: 12,
           background: "#E5E7EB",
           padding: 4,
@@ -479,17 +481,17 @@ days since last used: ${daysSinceLastPlay}`
             }}>
             ✏️ Manual
           </button>
-        </div>
+        </div> */}
 
-        {/* Plaid Subscriptions Tab */}
-        {activeTab === "plaid" && userId && (
+        {/* TEMPORARILY DISABLED - Plaid Subscriptions Tab */}
+        {/* {activeTab === "plaid" && userId && (
           <div key={plaidRefreshKey}>
             <PlaidSubscriptions userId={userId} useMockData={false} />
           </div>
-        )}
+        )} */}
 
-        {/* Manual Subscriptions Tab */}
-        {activeTab === "manual" && (
+        {/* Manual Subscriptions - now always visible */}
+        {true && (
           <>
             {/* Manage Subscriptions Button */}
             <button

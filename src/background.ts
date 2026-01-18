@@ -387,6 +387,59 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   }
 })
 
+// Show Spotify cancellation notification
+function showSpotifyCancelNotification(): void {
+  console.log("[Background] Attempting to show Spotify cancel notification...")
+  const manifest = chrome.runtime.getManifest()
+  const iconPath = manifest.icons?.['128'] || manifest.icons?.['48'] || 'icon.png'
+  const iconUrl = chrome.runtime.getURL(iconPath)
+  console.log("[Background] Using icon URL:", iconUrl)
+  chrome.notifications.create('spotify-cancel', {
+    type: 'basic',
+    iconUrl: iconUrl,
+    title: '🔥 Cancel Spotify?',
+    message: "You haven't used Spotify in a while. Want to cancel and save $11.99/month?",
+    buttons: [
+      { title: 'Remind me later' },
+      { title: 'Cancel Subscription' }
+    ],
+    priority: 2,
+    requireInteraction: true
+  }, (notificationId) => {
+    if (chrome.runtime.lastError) {
+      console.error("[Background] Notification error:", chrome.runtime.lastError.message)
+    } else {
+      console.log("[Background] Notification created with ID:", notificationId)
+    }
+  })
+}
+
+// Handle notification click (for macOS - buttons don't work on macOS)
+chrome.notifications.onClicked.addListener((notificationId) => {
+  if (notificationId === 'spotify-cancel') {
+    // Open Spotify account page when notification is clicked
+    chrome.tabs.create({ url: 'https://www.spotify.com/account/overview/' })
+    chrome.notifications.clear(notificationId)
+  }
+})
+
+// Handle notification button clicks (Windows only)
+chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
+  if (notificationId === 'spotify-cancel') {
+    if (buttonIndex === 0) {
+      // Remind me later - show again in 5 seconds
+      chrome.notifications.clear(notificationId)
+      setTimeout(() => {
+        showSpotifyCancelNotification()
+      }, 5000)
+    } else if (buttonIndex === 1) {
+      // Cancel - open Spotify account page
+      chrome.tabs.create({ url: 'https://www.spotify.com/account/overview/' })
+      chrome.notifications.clear(notificationId)
+    }
+  }
+})
+
 // Listen for subscription changes (when user adds/edits/deletes) and price requests
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "SUBSCRIPTIONS_UPDATED") {
@@ -396,6 +449,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ success: true })
   } else if (message.type === "GET_SERVICE_PRICES") {
     sendResponse({ prices: SERVICE_PRICES_CAD })
+  } else if (message.type === "SHOW_CANCEL_NOTIFICATION") {
+    showSpotifyCancelNotification()
+    sendResponse({ success: true })
   }
   return true
 })
@@ -405,6 +461,11 @@ async function initialize(): Promise<void> {
   await fetchSubscriptions()
   await scanAllTabs()
   console.log("[Background] Tab tracking service initialized")
+
+  // Auto-trigger Spotify cancel notification for demo (3 seconds after load)
+  setTimeout(() => {
+    showSpotifyCancelNotification()
+  }, 3000)
 }
 
 initialize()
