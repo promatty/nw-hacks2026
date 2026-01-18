@@ -419,17 +419,6 @@ Rules:
 
   // Render home view
   if (view === "home") {
-    // Calculate total money wasted across all subscriptions
-    const totalMoneyWasted = subscriptions.reduce((total, sub) => {
-      const monthlyPrice = getMonthlyPrice(sub.url)
-      if (!monthlyPrice) return total
-      const totalWastedDays = calculateTotalWastedDays(sub)
-      const wasted = calculateMoneyWasted(totalWastedDays, monthlyPrice)
-      console.log(`[DEBUG] ${sub.name}: wastedDays=${totalWastedDays}, price=${monthlyPrice}, wasted=$${wasted.toFixed(2)}`)
-      return total + wasted
-    }, 0)
-    console.log(`[DEBUG] Total subscriptions: ${subscriptions.length}, Total money wasted: $${totalMoneyWasted.toFixed(2)}`)
-
     return (
       <div
         style={{
@@ -570,24 +559,16 @@ Rules:
                 return `${Math.floor(diffDays / 365)} years ago`
               }
 
-              // Format total time (more detailed for cost analysis)
+              // Format total time
               const formatTotalTime = (seconds: number) => {
                 if (seconds < 60) return `${seconds}s`
-                const totalMinutes = Math.floor(seconds / 60)
-                const hours = Math.floor(totalMinutes / 60)
-                const minutes = totalMinutes % 60
-                if (hours === 0) return `${minutes}m`
-                if (hours < 24) return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`
+                const minutes = Math.floor(seconds / 60)
+                if (minutes < 60) return `${minutes}m`
+                const hours = Math.floor(minutes / 60)
+                if (hours < 24) return `${hours}h`
                 const days = Math.floor(hours / 24)
-                const remainingHours = hours % 24
-                return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`
+                return `${days}d`
               }
-
-              // Get price info for this subscription
-              const monthlyPrice = getMonthlyPrice(sub.url)
-              const dollarPerHour = monthlyPrice && sub.total_time_seconds > 0
-                ? calculateDollarPerHour(sub.total_time_seconds, monthlyPrice)
-                : null
 
               return (
                 <div
@@ -629,37 +610,6 @@ Rules:
                         <span>•</span>
                         <span>Time: {formatTotalTime(sub.total_time_seconds)}</span>
                       </div>
-                      {/* Cost Analysis */}
-                      {monthlyPrice && (
-                        <div style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: 4,
-                          fontSize: 11,
-                          marginTop: 4,
-                        }}>
-                          {/* $/Hour Row */}
-                          <div style={{
-                            display: "flex",
-                            flexWrap: "wrap",
-                            gap: 8,
-                            padding: "4px 8px",
-                            background: !dollarPerHour || dollarPerHour > 100 ? "#FEE2E2" : dollarPerHour >= 1 ? "#FEF3C7" : "#D1FAE5",
-                            borderRadius: 4
-                          }}>
-                            <span style={{ fontWeight: 500 }}>${monthlyPrice.toFixed(2)}/mo</span>
-                            <span>•</span>
-                            <span style={{
-                              fontWeight: 600,
-                              color: !dollarPerHour || dollarPerHour > 100 ? "#DC2626" : dollarPerHour >= 1 ? "#B45309" : "#059669"
-                            }}>
-                              {dollarPerHour
-                                ? `$${dollarPerHour.toFixed(2)}/hr`
-                                : "No usage yet"}
-                            </span>
-                          </div>
-                        </div>
-                      )}
                     </div>
                     <div style={{ display: "flex", gap: 4, flexShrink: 0, marginLeft: 8 }}>
                       <button

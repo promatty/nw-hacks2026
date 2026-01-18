@@ -27,7 +27,6 @@ const Burny: React.FC<BurnyProps> = ({
 
   // Idle floating animation
   const floatAnimation = {
-<<<<<<< HEAD
     y: [0, -10, 0]
   };
 
@@ -35,20 +34,11 @@ const Burny: React.FC<BurnyProps> = ({
     duration: 2,
     repeat: Infinity,
     ease: "easeInOut" as const
-=======
-    y: [0, -10, 0],
-    transition: {
-      duration: 2,
-      repeat: Infinity,
-      ease: "easeInOut" as const
-    }
->>>>>>> main
   };
 
   // Flame flicker animation
   const flickerAnimation = {
     scale: [1, 1.05, 0.98, 1.02, 1],
-<<<<<<< HEAD
     opacity: [0.9, 1, 0.95, 1, 0.9]
   };
 
@@ -56,14 +46,6 @@ const Burny: React.FC<BurnyProps> = ({
     duration: 1.5,
     repeat: Infinity,
     ease: "easeInOut" as const
-=======
-    opacity: [0.9, 1, 0.95, 1, 0.9],
-    transition: {
-      duration: 1.5,
-      repeat: Infinity,
-      ease: "easeInOut" as const
-    }
->>>>>>> main
   };
 
   // Expression definitions with anime-style features
