@@ -14,8 +14,6 @@ RoastMySubs is a Chrome extension that connects to your bank via Plaid to automa
 -React + Framer Motion for smooth UI animations and the expressive Burny mascot
 -Implementing an iterative workflow, we used a feature list where we'd call out which feature we were working on. Finished features got crossed off, and whoever finished first grabbed the next unclaimed one. 
 
-GitHub repo: [link](https://github.com/promatty/nw-hacks2026)
-
 ## Challenges we ran into
 -Chrome extension content script injection timing was tricky—detecting checkout pages on SPAs required careful URL monitoring
 -Balancing the "roast" tone: making it funny without being genuinely hurtful
