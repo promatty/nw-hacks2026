@@ -1,6 +1,7 @@
 import React from "react"
 import { useEffect, useState } from "react"
 import { initializeGemini, sendPromptWithStreaming } from "~gemini"
+import spotifyData from "./data/spotify-listening-history.json"
 
 interface Subscription {
   id: string
@@ -185,8 +186,30 @@ function IndexPopup() {
     setGeminiLoading(true)
     setGeminiResponse("")
     try {
+      // Check if user has been active recently
+      const now = new Date()
+      const mostRecentPlay = new Date(spotifyData.items[0]?.played_at || 0)
+      const daysSinceLastPlay = Math.floor((now.getTime() - mostRecentPlay.getTime()) / (1000 * 60 * 60 * 24))
+      const hasRecentActivity = daysSinceLastPlay <= 7
+
+      // Create personalized prompt
+      const prompt = `You are a subscription manager assistant with a sassy personality. Your job is to track subscriptions and roast users for ones they don't use.
+
+Examples:
+- "$45 down the drain in 3 months. You're literally paying to NOT watch TV."
+- "Gym membership unused for 6 months? That's $180 for a very expensive guilt trip."
+- "Spotify Premium while you listen to YouTube? Congratulations on your donation to Sweden."
+
+For active subscriptions: brief positive note.
+
+Keep it snappy. No paragraphs.
+
+Here's the data: 
+service: Spotify 
+days since last used: ${daysSinceLastPlay}`
+
       await sendPromptWithStreaming(
-        "Tell me a short joke about subscriptions.",
+        prompt,
         (chunk) => {
           setGeminiResponse((prev) => prev + chunk)
         }
@@ -364,8 +387,8 @@ function IndexPopup() {
                     justifyContent: "center"
                   }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-                    <path d="m15 5 4 4"/>
+                    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                    <path d="m15 5 4 4" />
                   </svg>
                 </button>
                 <button
