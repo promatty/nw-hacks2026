@@ -493,7 +493,7 @@ const Burny: React.FC<BurnyProps> = ({
             exit={{ opacity: 0, y: -20, scale: 0.8 }}
             transition={{ type: "spring", stiffness: 300, damping: 25 }}
             style={{
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              background: 'linear-gradient(135deg, #FFD700 0%, #FF5E00 100%)',
               color: 'white',
               padding: '20px 30px',
               borderRadius: '20px',
@@ -514,7 +514,7 @@ const Burny: React.FC<BurnyProps> = ({
               height: 0,
               borderLeft: '15px solid transparent',
               borderRight: '15px solid transparent',
-              borderBottom: '15px solid #667eea'
+              borderBottom: '15px solid #FF9500'
             }} />
             {message}
           </motion.div>
