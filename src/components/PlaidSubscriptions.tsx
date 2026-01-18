@@ -28,10 +28,22 @@ interface PlaidSubscriptionsProps {
   useMockData?: boolean;
 }
 
+interface CancellationModal {
+  serviceName: string;
+  url: string;
+  difficulty: string;
+  notes?: string;
+  email?: string;
+  matchScore: number;
+  source: 'curated' | 'ai-generated';
+}
+
 export function PlaidSubscriptions({ userId, useMockData = false }: PlaidSubscriptionsProps) {
   const [data, setData] = useState<PlaidSubscriptionsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [cancellationModal, setCancellationModal] = useState<CancellationModal | null>(null);
+  const [cancellationLoading, setCancellationLoading] = useState(false);
 
   const fetchSubscriptions = useCallback(async () => {
     setLoading(true);
@@ -89,6 +101,41 @@ export function PlaidSubscriptions({ userId, useMockData = false }: PlaidSubscri
   useEffect(() => {
     fetchSubscriptions();
   }, [fetchSubscriptions]);
+
+  const handleCancelSubscription = async (serviceName: string) => {
+    setCancellationLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/cancellation-links/${encodeURIComponent(serviceName)}`);
+      const json = await response.json();
+
+      if (response.ok && json.success) {
+        setCancellationModal(json.data);
+      } else {
+        setError(json.error || "Could not find cancellation information for this service");
+        setTimeout(() => setError(null), 3000);
+      }
+    } catch (err) {
+      setError("Failed to fetch cancellation information");
+      setTimeout(() => setError(null), 3000);
+    } finally {
+      setCancellationLoading(false);
+    }
+  };
+
+  const getDifficultyColor = (difficulty: string): string => {
+    switch (difficulty.toLowerCase()) {
+      case 'easy':
+        return '#10B981';
+      case 'medium':
+        return '#F59E0B';
+      case 'hard':
+        return '#EF4444';
+      case 'impossible':
+        return '#7C3AED';
+      default:
+        return '#6B7280';
+    }
+  };
 
   if (loading) {
     return (
@@ -210,12 +257,12 @@ export function PlaidSubscriptions({ userId, useMockData = false }: PlaidSubscri
               }}>
                 {getCategoryIcon(sub.category[0])}
               </div>
-              
+
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ 
-                  margin: 0, 
-                  fontSize: '14px', 
-                  fontWeight: '600', 
+                <p style={{
+                  margin: 0,
+                  fontSize: '14px',
+                  fontWeight: '600',
                   color: '#111827',
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
@@ -228,14 +275,34 @@ export function PlaidSubscriptions({ userId, useMockData = false }: PlaidSubscri
                 </p>
               </div>
             </div>
-            
-            <div style={{ textAlign: 'right', flexShrink: 0 }}>
-              <p style={{ margin: 0, fontSize: '15px', fontWeight: '600', color: '#111827' }}>
-                ${sub.amount.toFixed(2)}
-              </p>
-              <p style={{ margin: 0, fontSize: '11px', color: '#9CA3AF' }}>
-                /mo
-              </p>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+              <button
+                onClick={() => handleCancelSubscription(sub.merchantName)}
+                disabled={cancellationLoading}
+                title="Cancel Subscription"
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: 6,
+                  border: '1px solid #DC2626',
+                  background: '#FEE2E2',
+                  color: '#DC2626',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  cursor: cancellationLoading ? 'not-allowed' : 'pointer',
+                  opacity: cancellationLoading ? 0.5 : 1
+                }}>
+                Cancel
+              </button>
+
+              <div style={{ textAlign: 'right' }}>
+                <p style={{ margin: 0, fontSize: '15px', fontWeight: '600', color: '#111827' }}>
+                  ${sub.amount.toFixed(2)}
+                </p>
+                <p style={{ margin: 0, fontSize: '11px', color: '#9CA3AF' }}>
+                  /mo
+                </p>
+              </div>
             </div>
           </div>
         ))}
@@ -246,6 +313,127 @@ export function PlaidSubscriptions({ userId, useMockData = false }: PlaidSubscri
           </p>
         )}
       </div>
+
+      {/* Cancellation Modal */}
+      {cancellationModal && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0,0,0,0.7)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000
+          }}
+          onClick={() => setCancellationModal(null)}>
+          <div
+            style={{
+              background: "#1F2937",
+              padding: 20,
+              borderRadius: 8,
+              width: 320,
+              border: "2px solid #F97316",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
+              maxHeight: "80vh",
+              overflowY: "auto"
+            }}
+            onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: "0 0 16px 0", fontSize: 16, fontWeight: 600, color: "#F9FAFB" }}>
+              Cancel {cancellationModal.serviceName}
+            </h3>
+
+            {/* Difficulty badge */}
+            <div style={{ marginBottom: 12 }}>
+              <span
+                style={{
+                  padding: "4px 8px",
+                  borderRadius: 4,
+                  background: getDifficultyColor(cancellationModal.difficulty),
+                  color: "white",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  textTransform: "uppercase"
+                }}>
+                {cancellationModal.difficulty}
+              </span>
+            </div>
+
+            {/* Instructions */}
+            {cancellationModal.notes && (
+              <div style={{ marginBottom: 16, padding: 12, background: "#374151", borderRadius: 6 }}>
+                <p style={{ margin: 0, fontSize: 13, color: "#E5E7EB", lineHeight: "1.5" }}>
+                  {cancellationModal.notes}
+                </p>
+              </div>
+            )}
+
+            {/* Email if needed */}
+            {cancellationModal.email && (
+              <div style={{ marginBottom: 16, padding: 12, background: "#374151", borderRadius: 6 }}>
+                <p style={{ margin: 0, fontSize: 13, color: "#E5E7EB" }}>
+                  📧 Email: <span style={{ color: "#F97316", fontWeight: 500 }}>{cancellationModal.email}</span>
+                </p>
+              </div>
+            )}
+
+            {/* AI-generated warning */}
+            {cancellationModal.source === 'ai-generated' && (
+              <div style={{ marginBottom: 16, padding: 12, background: "#1e3a8a", borderRadius: 6, border: "1px solid #60A5FA" }}>
+                <p style={{ margin: 0, fontSize: 12, color: "#DBEAFE" }}>
+                  🤖 AI-Generated URL ({cancellationModal.matchScore}% confidence) - Please verify this link is correct before proceeding.
+                </p>
+              </div>
+            )}
+
+            {/* Fuzzy match warning for curated entries */}
+            {cancellationModal.source === 'curated' && cancellationModal.matchScore < 100 && (
+              <div style={{ marginBottom: 16, padding: 12, background: "#451a03", borderRadius: 6, border: "1px solid #F59E0B" }}>
+                <p style={{ margin: 0, fontSize: 12, color: "#FDE68A" }}>
+                  ⚠️ Fuzzy match ({cancellationModal.matchScore}% confidence) - Please verify this is the correct service.
+                </p>
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setCancellationModal(null)}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: 6,
+                  border: "1px solid #4B5563",
+                  background: "#374151",
+                  color: "#E5E7EB",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  cursor: "pointer"
+                }}>
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  window.open(cancellationModal.url, '_blank');
+                  setCancellationModal(null);
+                }}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: 6,
+                  border: "none",
+                  background: "#DC2626",
+                  color: "white",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  cursor: "pointer"
+                }}>
+                Go to Cancellation Page
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

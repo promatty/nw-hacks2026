@@ -34,6 +34,16 @@ interface WastedBreakdown {
   wastedAmount: number
 }
 
+interface CancellationModal {
+  serviceName: string
+  url: string
+  difficulty: string
+  notes?: string
+  email?: string
+  matchScore: number
+  source: 'curated' | 'ai-generated'
+}
+
 // Price map for known services (CAD)
 const SERVICE_PRICES_CAD: Record<string, number> = {
   'netflix.com': 16.49,
@@ -274,6 +284,10 @@ function IndexPopup() {
   // Debug state
   const [debugExpanded, setDebugExpanded] = useState<string | null>(null)
 
+  // Cancellation modal state
+  const [cancellationModal, setCancellationModal] = useState<CancellationModal | null>(null)
+  const [cancellationLoading, setCancellationLoading] = useState(false)
+
   // Money wasted state
   const [moneyWasted, setMoneyWasted] = useState<{
     totalWasted: number
@@ -455,6 +469,41 @@ function IndexPopup() {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
       handleAdd()
+    }
+  }
+
+  const handleCancelSubscription = async (serviceName: string) => {
+    setCancellationLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/cancellation-links/${encodeURIComponent(serviceName)}`)
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        setCancellationModal(data.data)
+      } else {
+        setError(data.error || "Could not find cancellation information for this service")
+        setTimeout(() => setError(null), 3000)
+      }
+    } catch (err) {
+      setError("Failed to fetch cancellation information")
+      setTimeout(() => setError(null), 3000)
+    } finally {
+      setCancellationLoading(false)
+    }
+  }
+
+  const getDifficultyColor = (difficulty: string): string => {
+    switch (difficulty.toLowerCase()) {
+      case 'easy':
+        return '#10B981'
+      case 'medium':
+        return '#F59E0B'
+      case 'hard':
+        return '#EF4444'
+      case 'impossible':
+        return '#7C3AED'
+      default:
+        return '#6B7280'
     }
   }
 
@@ -975,6 +1024,27 @@ Rules:
                     </div>
                     <div style={{ display: "flex", gap: 4, flexShrink: 0, marginLeft: 8 }}>
                       <button
+                        onClick={() => handleCancelSubscription(sub.name)}
+                        disabled={cancellationLoading}
+                        title="Cancel Subscription"
+                        style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: 6,
+                          border: "1px solid #DC2626",
+                          background: "#FEE2E2",
+                          cursor: cancellationLoading ? "not-allowed" : "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          opacity: cancellationLoading ? 0.5 : 1
+                        }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2">
+                          <circle cx="12" cy="12" r="10"/>
+                          <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+                        </svg>
+                      </button>
+                      <button
                         onClick={() => openEdit(sub)}
                         style={{
                           width: 32,
@@ -1223,6 +1293,127 @@ Rules:
                   opacity: !editName.trim() ? 0.6 : 1
                 }}>
                 Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancellation Modal */}
+      {cancellationModal && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0,0,0,0.7)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000
+          }}
+          onClick={() => setCancellationModal(null)}>
+          <div
+            style={{
+              background: "#1F2937",
+              padding: 20,
+              borderRadius: 8,
+              width: 320,
+              border: "2px solid #F97316",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
+              maxHeight: "80vh",
+              overflowY: "auto"
+            }}
+            onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: "0 0 16px 0", fontSize: 16, fontWeight: 600, color: "#F9FAFB" }}>
+              Cancel {cancellationModal.serviceName}
+            </h3>
+
+            {/* Difficulty badge */}
+            <div style={{ marginBottom: 12 }}>
+              <span
+                style={{
+                  padding: "4px 8px",
+                  borderRadius: 4,
+                  background: getDifficultyColor(cancellationModal.difficulty),
+                  color: "white",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  textTransform: "uppercase"
+                }}>
+                {cancellationModal.difficulty}
+              </span>
+            </div>
+
+            {/* Instructions */}
+            {cancellationModal.notes && (
+              <div style={{ marginBottom: 16, padding: 12, background: "#374151", borderRadius: 6 }}>
+                <p style={{ margin: 0, fontSize: 13, color: "#E5E7EB", lineHeight: "1.5" }}>
+                  {cancellationModal.notes}
+                </p>
+              </div>
+            )}
+
+            {/* Email if needed */}
+            {cancellationModal.email && (
+              <div style={{ marginBottom: 16, padding: 12, background: "#374151", borderRadius: 6 }}>
+                <p style={{ margin: 0, fontSize: 13, color: "#E5E7EB" }}>
+                  📧 Email: <span style={{ color: "#F97316", fontWeight: 500 }}>{cancellationModal.email}</span>
+                </p>
+              </div>
+            )}
+
+            {/* AI-generated warning */}
+            {cancellationModal.source === 'ai-generated' && (
+              <div style={{ marginBottom: 16, padding: 12, background: "#1e3a8a", borderRadius: 6, border: "1px solid #60A5FA" }}>
+                <p style={{ margin: 0, fontSize: 12, color: "#DBEAFE" }}>
+                  🤖 AI-Generated URL ({cancellationModal.matchScore}% confidence) - Please verify this link is correct before proceeding.
+                </p>
+              </div>
+            )}
+
+            {/* Fuzzy match warning for curated entries */}
+            {cancellationModal.source === 'curated' && cancellationModal.matchScore < 100 && (
+              <div style={{ marginBottom: 16, padding: 12, background: "#451a03", borderRadius: 6, border: "1px solid #F59E0B" }}>
+                <p style={{ margin: 0, fontSize: 12, color: "#FDE68A" }}>
+                  ⚠️ Fuzzy match ({cancellationModal.matchScore}% confidence) - Please verify this is the correct service.
+                </p>
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setCancellationModal(null)}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: 6,
+                  border: "1px solid #4B5563",
+                  background: "#374151",
+                  color: "#E5E7EB",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  cursor: "pointer"
+                }}>
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  window.open(cancellationModal.url, '_blank')
+                  setCancellationModal(null)
+                }}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: 6,
+                  border: "none",
+                  background: "#DC2626",
+                  color: "white",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  cursor: "pointer"
+                }}>
+                Go to Cancellation Page
               </button>
             </div>
           </div>

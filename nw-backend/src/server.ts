@@ -10,6 +10,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 import { Products } from 'plaid';
 import * as plaidService from './services/plaidService.js';
+import * as cancellationService from './services/cancellationService.js';
 import type {
   CreateLinkTokenRequest,
   ExchangeTokenRequest,
@@ -83,6 +84,11 @@ app.get('/', (_req: Request, res: Response) => {
       { method: 'GET', path: '/api/plaid/transactions/:userId', description: 'Get synced transactions for a user' },
       { method: 'GET', path: '/api/plaid/recurring/:userId', description: 'Get recurring transactions (subscriptions)' },
       { method: 'GET', path: '/api/plaid/accounts/:userId', description: 'Get connected accounts for a user' },
+      // Cancellation link endpoints
+      { method: 'GET', path: '/api/cancellation-links/:serviceName', description: 'Get cancellation link for a service' },
+      { method: 'POST', path: '/api/cancellation-links/bulk', description: 'Get cancellation links for multiple services' },
+      { method: 'POST', path: '/api/cancellation-links/refresh', description: 'Refresh JustDelete.me data' },
+      { method: 'GET', path: '/api/cancellation-links/status', description: 'Get cancellation service status' },
       // Demo endpoints (mock data)
       { method: 'GET', path: '/api/demo/subscriptions', description: 'Get mock streaming subscriptions for demo' },
       { method: 'GET', path: '/api/demo/transactions', description: 'Get mock transactions for demo' },
@@ -598,6 +604,105 @@ app.get('/api/plaid/accounts/:userId', async (req: Request, res: Response) => {
 });
 
 // ============================================================================
+// Cancellation Link Routes
+// ============================================================================
+
+// GET /api/cancellation-links/:serviceName - Get cancellation link for a service
+app.get('/api/cancellation-links/:serviceName', async (req: Request, res: Response) => {
+  try {
+    const { serviceName } = req.params;
+
+    if (!serviceName || serviceName.trim() === '') {
+      res.status(400).json({
+        success: false,
+        error: 'Service name is required'
+      });
+      return;
+    }
+
+    const link = await cancellationService.getCancellationLink(serviceName);
+
+    if (!link) {
+      res.status(404).json({
+        success: false,
+        error: 'No cancellation information found for this service',
+        suggestion: `Try searching "${serviceName}" help center for cancellation instructions`
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      data: link
+    });
+  } catch (error) {
+    console.error('Error fetching cancellation link:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message
+    });
+  }
+});
+
+// POST /api/cancellation-links/bulk - Get cancellation links for multiple services
+app.post('/api/cancellation-links/bulk', async (req: Request, res: Response) => {
+  try {
+    const { services } = req.body;
+
+    if (!services || !Array.isArray(services)) {
+      res.status(400).json({
+        success: false,
+        error: 'services array is required'
+      });
+      return;
+    }
+
+    const results = await cancellationService.getCancellationLinksBulk(services);
+
+    res.json({
+      success: true,
+      results
+    });
+  } catch (error) {
+    console.error('Error fetching bulk cancellation links:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message
+    });
+  }
+});
+
+// POST /api/cancellation-links/refresh - Manually refresh JustDelete.me data
+app.post('/api/cancellation-links/refresh', async (req: Request, res: Response) => {
+  try {
+    await cancellationService.refreshJustDeleteMeData();
+    const status = cancellationService.getServiceStatus();
+
+    res.json({
+      success: true,
+      message: 'JustDelete.me data refreshed successfully',
+      servicesLoaded: status.servicesLoaded,
+      timestamp: status.lastRefresh
+    });
+  } catch (error) {
+    console.error('Error refreshing cancellation data:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message
+    });
+  }
+});
+
+// GET /api/cancellation-links/status - Get cancellation service status
+app.get('/api/cancellation-links/status', (_req: Request, res: Response) => {
+  const status = cancellationService.getServiceStatus();
+  res.json({
+    success: true,
+    ...status
+  });
+});
+
+// ============================================================================
 // Demo/Mock Data Endpoints (for sandbox testing)
 // ============================================================================
 
@@ -715,9 +820,14 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 // Start Server
 // ============================================================================
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Server running on http://localhost:${PORT}`);
   console.log(`Plaid environment: ${process.env.PLAID_ENV || 'sandbox'}`);
+
+  // Initialize cancellation service
+  console.log('Initializing cancellation service...');
+  await cancellationService.initializeCancellationService();
+  console.log('Cancellation service initialized');
 });
 
 export default app;
