@@ -493,7 +493,7 @@ const Burny: React.FC<BurnyProps> = ({
             exit={{ opacity: 0, y: -20, scale: 0.8 }}
             transition={{ type: "spring", stiffness: 300, damping: 25 }}
             style={{
-              background: 'linear-gradient(135deg, #FF9500 0%, #FF5E00 100%)',
+              background: 'linear-gradient(135deg, #FFD700 0%, #FF5E00 100%)',
               color: 'white',
               padding: '20px 30px',
               borderRadius: '20px',
