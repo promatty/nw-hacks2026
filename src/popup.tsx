@@ -542,9 +542,9 @@ Rules:
           padding: 16,
           fontFamily: "system-ui, -apple-system, sans-serif",
           border: "3px solid #F97316",
-          background: "#FAFAFA"
+          background: "#1F2937"
         }}>
-        <h2 style={{ margin: "0 0 16px 0", fontSize: 18 }}>
+        <h2 style={{ margin: "0 0 16px 0", fontSize: 18, color: "#F9FAFB" }}>
           RoastMySubs
         </h2>
 
@@ -554,12 +554,12 @@ Rules:
             style={{
               marginBottom: 8,
               padding: "6px 12px",
-              background: "#FEF3C7",
+              background: "#78350F",
               border: "1px solid #F59E0B",
               borderRadius: 6,
               fontSize: 13,
               fontWeight: 500,
-              color: "#92400E",
+              color: "#FEF3C7",
               textAlign: "center"
             }}>
             {`You haven't used ${targetedSubscription} in ${daysSinceLastUsed} day${daysSinceLastUsed === 1 ? '' : 's'}`}
@@ -581,9 +581,9 @@ Rules:
           style={{
             padding: "8px 16px",
             borderRadius: 6,
-            border: "1px solid #F59E0B",
-            background: "#FEF3C7",
-            color: "#92400E",
+            border: "1px solid #374151",
+            background: "#374151",
+            color: "#E5E7EB",
             fontSize: 14,
             fontWeight: 500,
             cursor: "pointer",
@@ -647,7 +647,7 @@ Rules:
         padding: 16,
         fontFamily: "system-ui, -apple-system, sans-serif",
         border: "3px solid #F97316",
-        background: "#FAFAFA"
+        background: "#1F2937"
       }}>
       {/* Header with back button */}
       <div style={{ display: "flex", alignItems: "center", marginBottom: 16, gap: 8 }}>
@@ -656,14 +656,15 @@ Rules:
           style={{
             padding: "4px 8px",
             borderRadius: 4,
-            border: "1px solid #ddd",
-            background: "white",
+            border: "1px solid #4B5563",
+            background: "#374151",
+            color: "#E5E7EB",
             cursor: "pointer",
             fontSize: 14
           }}>
           ← Back
         </button>
-        <h2 style={{ margin: 0, fontSize: 18, flex: 1 }}>
+        <h2 style={{ margin: 0, fontSize: 18, flex: 1, color: "#F9FAFB" }}>
           Manage Subscriptions
         </h2>
       </div>
@@ -674,8 +675,8 @@ Rules:
           style={{
             padding: "8px 12px",
             marginBottom: 16,
-            background: "#FEE2E2",
-            color: "#DC2626",
+            background: "#7F1D1D",
+            color: "#FCA5A5",
             borderRadius: 6,
             fontSize: 12
           }}>
@@ -685,15 +686,15 @@ Rules:
 
       {/* Subscriptions list */}
       <div>
-        <h3 style={{ margin: "0 0 12px 0", fontSize: 14, fontWeight: 500 }}>
+        <h3 style={{ margin: "0 0 12px 0", fontSize: 14, fontWeight: 500, color: "#D1D5DB" }}>
           Your Subscriptions
         </h3>
         {loading ? (
-          <div style={{ textAlign: "center", color: "#666", padding: 20, fontSize: 13 }}>
+          <div style={{ textAlign: "center", color: "#9CA3AF", padding: 20, fontSize: 13 }}>
             Loading...
           </div>
         ) : subscriptions.length === 0 ? (
-          <div style={{ textAlign: "center", color: "#666", padding: 20, fontSize: 13 }}>
+          <div style={{ textAlign: "center", color: "#9CA3AF", padding: 20, fontSize: 13 }}>
             No subscriptions yet. Add one below!
           </div>
         ) : (
@@ -731,13 +732,13 @@ Rules:
                   key={sub.id}
                   style={{
                     padding: "10px 12px",
-                    background: "#F9FAFB",
+                    background: "#374151",
                     borderRadius: 6,
-                    border: "1px solid #E5E7EB"
+                    border: "1px solid #4B5563"
                   }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: 8 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4, color: "#F9FAFB" }}>
                         {sub.name}
                       </div>
                       {sub.url && (
@@ -747,7 +748,7 @@ Rules:
                           rel="noopener noreferrer"
                           style={{
                             fontSize: 11,
-                            color: "#6B7280",
+                            color: "#9CA3AF",
                             textDecoration: "none",
                             display: "block",
                             overflow: "hidden",
@@ -759,7 +760,7 @@ Rules:
                         </a>
                       )}
                       {/* Usage Statistics */}
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, fontSize: 11, color: "#6B7280" }}>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, fontSize: 11, color: "#9CA3AF" }}>
                         <span>{sub.visit_count} visits</span>
                         <span>•</span>
                         <span>Last: {formatLastVisit(sub.last_visit)}</span>
@@ -774,14 +775,14 @@ Rules:
                           width: 32,
                           height: 32,
                           borderRadius: 6,
-                          border: "1px solid #E5E7EB",
-                          background: "white",
+                          border: "1px solid #4B5563",
+                          background: "#1F2937",
                           cursor: "pointer",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center"
                         }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
                           <path d="m15 5 4 4"/>
                         </svg>
@@ -793,7 +794,7 @@ Rules:
                           height: 32,
                           borderRadius: 6,
                           border: "none",
-                          background: "#EF4444",
+                          background: "#DC2626",
                           cursor: "pointer",
                           display: "flex",
                           alignItems: "center",
@@ -813,45 +814,45 @@ Rules:
                     style={{
                       padding: "4px 8px",
                       borderRadius: 4,
-                      border: "1px dashed #9CA3AF",
+                      border: "1px dashed #6B7280",
                       background: "transparent",
                       cursor: "pointer",
                       fontSize: 10,
-                      color: "#9CA3AF",
+                      color: "#6B7280",
                       marginTop: 8
                     }}>
                     {debugExpanded === sub.id ? "Hide Debug" : "Debug"}
                   </button>
                   {/* Debug Panel */}
                   {debugExpanded === sub.id && (
-                    <div style={{ marginTop: 8, padding: 8, background: "#FEF3C7", borderRadius: 4, fontSize: 11 }}>
-                      <div style={{ marginBottom: 6, fontWeight: 500, color: "#92400E" }}>Debug: Edit Stats</div>
+                    <div style={{ marginTop: 8, padding: 8, background: "#78350F", borderRadius: 4, fontSize: 11 }}>
+                      <div style={{ marginBottom: 6, fontWeight: 500, color: "#FEF3C7" }}>Debug: Edit Stats</div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                         <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ width: 80, color: "#78350F" }}>Visits:</span>
+                          <span style={{ width: 80, color: "#FDE68A" }}>Visits:</span>
                           <input
                             type="number"
                             defaultValue={sub.visit_count}
                             onBlur={(e) => handleDebugUpdate(sub.id, { visit_count: parseInt(e.target.value) || 0 })}
-                            style={{ flex: 1, padding: "4px 6px", borderRadius: 4, border: "1px solid #D97706", fontSize: 11 }}
+                            style={{ flex: 1, padding: "4px 6px", borderRadius: 4, border: "1px solid #F59E0B", fontSize: 11, background: "#1F2937", color: "#F9FAFB" }}
                           />
                         </label>
                         <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ width: 80, color: "#78350F" }}>Last Visit:</span>
+                          <span style={{ width: 80, color: "#FDE68A" }}>Last Visit:</span>
                           <input
                             type="datetime-local"
                             defaultValue={sub.last_visit ? new Date(sub.last_visit).toISOString().slice(0, 16) : ""}
                             onBlur={(e) => handleDebugUpdate(sub.id, { last_visit: new Date(e.target.value).toISOString() })}
-                            style={{ flex: 1, padding: "4px 6px", borderRadius: 4, border: "1px solid #D97706", fontSize: 11 }}
+                            style={{ flex: 1, padding: "4px 6px", borderRadius: 4, border: "1px solid #F59E0B", fontSize: 11, background: "#1F2937", color: "#F9FAFB" }}
                           />
                         </label>
                         <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ width: 80, color: "#78350F" }}>Time (sec):</span>
+                          <span style={{ width: 80, color: "#FDE68A" }}>Time (sec):</span>
                           <input
                             type="number"
                             defaultValue={sub.total_time_seconds}
                             onBlur={(e) => handleDebugUpdate(sub.id, { total_time_seconds: parseInt(e.target.value) || 0 })}
-                            style={{ flex: 1, padding: "4px 6px", borderRadius: 4, border: "1px solid #D97706", fontSize: 11 }}
+                            style={{ flex: 1, padding: "4px 6px", borderRadius: 4, border: "1px solid #F59E0B", fontSize: 11, background: "#1F2937", color: "#F9FAFB" }}
                           />
                         </label>
                       </div>
@@ -865,8 +866,8 @@ Rules:
       </div>
 
       {/* Add subscription form */}
-      <div style={{ marginTop: 16, padding: 12, background: "#F9FAFB", borderRadius: 6 }}>
-        <h3 style={{ margin: "0 0 12px 0", fontSize: 14, fontWeight: 500 }}>
+      <div style={{ marginTop: 16, padding: 12, background: "#374151", borderRadius: 6, border: "1px solid #4B5563" }}>
+        <h3 style={{ margin: "0 0 12px 0", fontSize: 14, fontWeight: 500, color: "#D1D5DB" }}>
           Add New Subscription
         </h3>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -880,7 +881,9 @@ Rules:
             style={{
               padding: "8px 12px",
               borderRadius: 6,
-              border: "1px solid #ddd",
+              border: "1px solid #4B5563",
+              background: "#1F2937",
+              color: "#F9FAFB",
               fontSize: 13,
               outline: "none"
             }}
@@ -895,7 +898,9 @@ Rules:
             style={{
               padding: "8px 12px",
               borderRadius: 6,
-              border: "1px solid #ddd",
+              border: "1px solid #4B5563",
+              background: "#1F2937",
+              color: "#F9FAFB",
               fontSize: 13,
               outline: "none"
             }}
@@ -928,7 +933,7 @@ Rules:
             left: 0,
             right: 0,
             bottom: 0,
-            background: "rgba(0,0,0,0.5)",
+            background: "rgba(0,0,0,0.7)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -936,13 +941,14 @@ Rules:
           }}>
           <div
             style={{
-              background: "white",
+              background: "#1F2937",
               padding: 20,
               borderRadius: 8,
               width: 280,
-              boxShadow: "0 4px 20px rgba(0,0,0,0.2)"
+              border: "1px solid #374151",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.4)"
             }}>
-            <h3 style={{ margin: "0 0 16px 0", fontSize: 16, fontWeight: 600 }}>
+            <h3 style={{ margin: "0 0 16px 0", fontSize: 16, fontWeight: 600, color: "#F9FAFB" }}>
               Edit Subscription
             </h3>
             <input
@@ -954,7 +960,9 @@ Rules:
                 width: "100%",
                 padding: "8px 12px",
                 borderRadius: 6,
-                border: "1px solid #ddd",
+                border: "1px solid #4B5563",
+                background: "#374151",
+                color: "#F9FAFB",
                 fontSize: 13,
                 marginBottom: 12,
                 boxSizing: "border-box",
@@ -970,7 +978,9 @@ Rules:
                 width: "100%",
                 padding: "8px 12px",
                 borderRadius: 6,
-                border: "1px solid #ddd",
+                border: "1px solid #4B5563",
+                background: "#374151",
+                color: "#F9FAFB",
                 fontSize: 13,
                 marginBottom: 16,
                 boxSizing: "border-box",
@@ -983,8 +993,9 @@ Rules:
                 style={{
                   padding: "8px 16px",
                   borderRadius: 6,
-                  border: "1px solid #ddd",
-                  background: "white",
+                  border: "1px solid #4B5563",
+                  background: "#374151",
+                  color: "#E5E7EB",
                   fontSize: 13,
                   fontWeight: 500,
                   cursor: "pointer"
@@ -998,7 +1009,7 @@ Rules:
                   padding: "8px 16px",
                   borderRadius: 6,
                   border: "none",
-                  background: "#4F46E5",
+                  background: "#F97316",
                   color: "white",
                   fontSize: 13,
                   fontWeight: 500,
