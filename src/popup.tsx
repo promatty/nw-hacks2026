@@ -84,25 +84,36 @@ function IndexPopup() {
     }
   }, [])
 
-  const fetchSubscriptions = async (uid: string) => {
+  const fetchSubscriptions = async (uid: string, silent = false) => {
     try {
-      setError(null)
-      setLoading(true)
+      if (!silent) {
+        setError(null)
+        setLoading(true)
+      }
       const response = await fetch(`${API_BASE}/subscriptions/${uid}`)
       if (!response.ok) {
         throw new Error("Failed to fetch subscriptions")
       }
       const data = await response.json()
-      console.log("[API] GET successful:", data.length, "subscriptions")
-      setSubscriptions(data)
+      // Only update state if data actually changed
+      setSubscriptions((prev) => {
+        const prevJson = JSON.stringify(prev)
+        const newJson = JSON.stringify(data)
+        if (prevJson === newJson) return prev
+        return data
+      })
     } catch (err) {
-      if (err instanceof TypeError && err.message.includes("fetch")) {
-        setError("Cannot connect to server. Is the backend running?")
-      } else {
-        setError(err instanceof Error ? err.message : "An error occurred")
+      if (!silent) {
+        if (err instanceof TypeError && err.message.includes("fetch")) {
+          setError("Cannot connect to server. Is the backend running?")
+        } else {
+          setError(err instanceof Error ? err.message : "An error occurred")
+        }
       }
     } finally {
-      setLoading(false)
+      if (!silent) {
+        setLoading(false)
+      }
     }
   }
 
@@ -117,7 +128,7 @@ function IndexPopup() {
     if (!userId || view !== "manager") return
 
     const interval = setInterval(() => {
-      fetchSubscriptions(userId)
+      fetchSubscriptions(userId, true) // Silent refresh - no loading state
     }, 3000)
 
     return () => clearInterval(interval)
