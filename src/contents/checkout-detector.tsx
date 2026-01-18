@@ -171,7 +171,7 @@ function CheckoutWarningOverlay({
               Your current {pattern.categoryDisplay.toLowerCase()} subscriptions:
             </p>
             <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-              {spending.subscriptions.slice(0, 4).map((sub, index) => (
+              {[...spending.subscriptions].sort((a, b) => b.amount - a.amount).slice(0, 4).map((sub, index) => (
                 <div
                   key={index}
                   style={{
