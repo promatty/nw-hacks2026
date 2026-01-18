@@ -222,10 +222,12 @@ function CheckoutWarningOverlay({
               e.currentTarget.style.backgroundColor = "transparent"
             }}
           >
-            I'll think about it
+            I'll waste money
           </button>
           <button
-            onClick={onDismiss}
+            onClick={() => {
+              chrome.runtime.sendMessage({ action: "closeTab" })
+            }}
             style={{
               flex: 1,
               padding: "12px 16px",
@@ -245,7 +247,7 @@ function CheckoutWarningOverlay({
               e.currentTarget.style.opacity = "1"
             }}
           >
-            Continue anyway
+            Close this tab
           </button>
         </div>
 
