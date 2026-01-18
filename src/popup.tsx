@@ -37,11 +37,9 @@ interface WastedBreakdown {
 interface CancellationModal {
   serviceName: string
   url: string
-  difficulty: string
   notes?: string
-  email?: string
   matchScore: number
-  source: 'curated' | 'ai-generated'
+  source: 'curated'
 }
 
 // Price map for known services (CAD)
@@ -492,20 +490,6 @@ function IndexPopup() {
     }
   }
 
-  const getDifficultyColor = (difficulty: string): string => {
-    switch (difficulty.toLowerCase()) {
-      case 'easy':
-        return '#10B981'
-      case 'medium':
-        return '#F59E0B'
-      case 'hard':
-        return '#EF4444'
-      case 'impossible':
-        return '#7C3AED'
-      default:
-        return '#6B7280'
-    }
-  }
 
   // Debug: update subscription stats
   const handleDebugUpdate = async (id: string, updates: { visit_count?: number; last_visit?: string; total_time_seconds?: number }) => {
@@ -1331,22 +1315,6 @@ Rules:
               Cancel {cancellationModal.serviceName}
             </h3>
 
-            {/* Difficulty badge */}
-            <div style={{ marginBottom: 12 }}>
-              <span
-                style={{
-                  padding: "4px 8px",
-                  borderRadius: 4,
-                  background: getDifficultyColor(cancellationModal.difficulty),
-                  color: "white",
-                  fontSize: 11,
-                  fontWeight: 600,
-                  textTransform: "uppercase"
-                }}>
-                {cancellationModal.difficulty}
-              </span>
-            </div>
-
             {/* Instructions */}
             {cancellationModal.notes && (
               <div style={{ marginBottom: 16, padding: 12, background: "#374151", borderRadius: 6 }}>
@@ -1356,26 +1324,8 @@ Rules:
               </div>
             )}
 
-            {/* Email if needed */}
-            {cancellationModal.email && (
-              <div style={{ marginBottom: 16, padding: 12, background: "#374151", borderRadius: 6 }}>
-                <p style={{ margin: 0, fontSize: 13, color: "#E5E7EB" }}>
-                  📧 Email: <span style={{ color: "#F97316", fontWeight: 500 }}>{cancellationModal.email}</span>
-                </p>
-              </div>
-            )}
-
-            {/* AI-generated warning */}
-            {cancellationModal.source === 'ai-generated' && (
-              <div style={{ marginBottom: 16, padding: 12, background: "#1e3a8a", borderRadius: 6, border: "1px solid #60A5FA" }}>
-                <p style={{ margin: 0, fontSize: 12, color: "#DBEAFE" }}>
-                  🤖 AI-Generated URL ({cancellationModal.matchScore}% confidence) - Please verify this link is correct before proceeding.
-                </p>
-              </div>
-            )}
-
-            {/* Fuzzy match warning for curated entries */}
-            {cancellationModal.source === 'curated' && cancellationModal.matchScore < 100 && (
+            {/* Fuzzy match warning */}
+            {cancellationModal.matchScore < 100 && (
               <div style={{ marginBottom: 16, padding: 12, background: "#451a03", borderRadius: 6, border: "1px solid #F59E0B" }}>
                 <p style={{ margin: 0, fontSize: 12, color: "#FDE68A" }}>
                   ⚠️ Fuzzy match ({cancellationModal.matchScore}% confidence) - Please verify this is the correct service.

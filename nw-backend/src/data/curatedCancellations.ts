@@ -203,6 +203,68 @@ export const CURATED_CANCELLATIONS: Record<string, CancellationEntry> = {
     url: 'https://www.icloud.com/settings/',
     notes: 'Manage iCloud storage plan through Apple ID settings.',
     aliases: ['icloud storage', 'icloud plus', 'apple icloud']
+  },
+
+  // Educational Resources
+  'udemy': {
+    name: 'Udemy',
+    url: 'https://www.udemy.com/user/edit-account/',
+    notes: 'Go to Account Settings to manage subscriptions and payment methods.',
+    aliases: ['udemy.com', 'udemy business', 'udemy personal plan']
+  },
+  'coursera': {
+    name: 'Coursera',
+    url: 'https://www.coursera.org/account-settings',
+    notes: 'Go to My Purchases to cancel Coursera Plus or individual subscriptions.',
+    aliases: ['coursera.com', 'coursera plus', 'coursera for business']
+  },
+  'skillshare': {
+    name: 'Skillshare',
+    url: 'https://www.skillshare.com/settings/payments',
+    notes: 'Go to Account Settings > Payments to cancel your membership.',
+    aliases: ['skillshare.com', 'skillshare premium']
+  },
+  'linkedin learning': {
+    name: 'LinkedIn Learning',
+    url: 'https://www.linkedin.com/learning/subscription/products',
+    notes: 'Manage your LinkedIn Learning subscription from your account.',
+    aliases: ['linkedin.com', 'lynda', 'lynda.com', 'linkedin premium']
+  },
+  'masterclass': {
+    name: 'MasterClass',
+    url: 'https://www.masterclass.com/settings/subscription',
+    notes: 'Go to Account Settings to manage your MasterClass subscription.',
+    aliases: ['masterclass.com', 'master class']
+  },
+  'brilliant': {
+    name: 'Brilliant',
+    url: 'https://brilliant.org/account/',
+    notes: 'Go to Account Settings to manage your Brilliant Premium subscription.',
+    aliases: ['brilliant.org', 'brilliant premium']
+  },
+  'duolingo': {
+    name: 'Duolingo Plus',
+    url: 'https://www.duolingo.com/settings/subscription',
+    notes: 'Manage your Duolingo Plus or Super subscription in settings.',
+    aliases: ['duolingo', 'duolingo.com', 'duolingo super', 'duolingo max']
+  },
+  'pluralsight': {
+    name: 'Pluralsight',
+    url: 'https://app.pluralsight.com/id/subscription',
+    notes: 'Go to Subscription in your account to cancel Pluralsight.',
+    aliases: ['pluralsight.com', 'pluralsight skills']
+  },
+  'codecademy': {
+    name: 'Codecademy',
+    url: 'https://www.codecademy.com/account/billing',
+    notes: 'Go to Account Settings > Billing to manage your Pro subscription.',
+    aliases: ['codecademy.com', 'codecademy pro']
+  },
+  'datacamp': {
+    name: 'DataCamp',
+    url: 'https://www.datacamp.com/profile/billing',
+    notes: 'Go to Account > Billing to manage your DataCamp subscription.',
+    aliases: ['datacamp.com', 'data camp']
   }
 };
 

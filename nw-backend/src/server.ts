@@ -16,10 +16,10 @@ import type {
   ExchangeTokenRequest,
   SyncTransactionsRequest,
 } from './types/plaid.js';
-import { 
-  MOCK_STREAMING_SUBSCRIPTIONS, 
+import {
+  MOCK_STREAMING_SUBSCRIPTIONS,
   generateMockTransactions,
-  calculateMockTotals 
+  calculateMockTotals
 } from './mocks/streamingSubscriptions.js';
 import type {
   CreateSubscriptionRequest,
@@ -163,7 +163,7 @@ app.post('/api/subscriptions', async (req: Request<object, object, CreateSubscri
 });
 
 // PUT /api/subscriptions/:id - Update subscription
-app.put('/api/subscriptions/:id', async (req: Request<{ id: string }, object, UpdateSubscriptionRequest>, res: Response) => {
+app.put('/api/subscriptions/:id', async (req: Request<{ id: string; }, object, UpdateSubscriptionRequest>, res: Response) => {
   try {
     const { id } = req.params;
     const updates = { ...req.body, updated_at: new Date().toISOString() };
@@ -209,7 +209,7 @@ app.delete('/api/subscriptions/:id', async (req: Request, res: Response) => {
 });
 
 // POST /api/subscriptions/:id/visit - Record a visit
-app.post('/api/subscriptions/:id/visit', async (req: Request<{ id: string }, object, RecordVisitRequest>, res: Response) => {
+app.post('/api/subscriptions/:id/visit', async (req: Request<{ id: string; }, object, RecordVisitRequest>, res: Response) => {
   try {
     const { id } = req.params;
     const { time_spent_seconds = 0 } = req.body;
@@ -519,7 +519,7 @@ app.get('/api/plaid/recurring/:userId', async (req: Request, res: Response) => {
       return;
     }
 
-    const accountIdArray = accountIds 
+    const accountIdArray = accountIds
       ? (accountIds as string).split(',')
       : undefined;
 
@@ -539,7 +539,7 @@ app.get('/api/plaid/recurring/:userId', async (req: Request, res: Response) => {
     );
 
     // Combine all subscriptions
-    const allSubscriptions = allResults.flatMap((r) => 
+    const allSubscriptions = allResults.flatMap((r) =>
       r.subscriptions.map((s) => ({
         ...s,
         institutionName: r.institutionName,
@@ -608,7 +608,7 @@ app.get('/api/plaid/accounts/:userId', async (req: Request, res: Response) => {
 // ============================================================================
 
 // GET /api/cancellation-links/:serviceName - Get cancellation link for a service
-app.get('/api/cancellation-links/:serviceName', async (req: Request, res: Response) => {
+app.get('/api/cancellation-links/:serviceName', async (req: Request<{ serviceName: string; }>, res: Response) => {
   try {
     const { serviceName } = req.params;
 
@@ -672,7 +672,7 @@ app.post('/api/cancellation-links/bulk', async (req: Request, res: Response) => 
   }
 });
 
-// POST /api/cancellation-links/refresh - Manually refresh JustDelete.me data
+// POST /api/cancellation-links/refresh - Manually refresh cancellation data
 app.post('/api/cancellation-links/refresh', async (req: Request, res: Response) => {
   try {
     await cancellationService.refreshJustDeleteMeData();
@@ -680,9 +680,8 @@ app.post('/api/cancellation-links/refresh', async (req: Request, res: Response) 
 
     res.json({
       success: true,
-      message: 'JustDelete.me data refreshed successfully',
-      servicesLoaded: status.servicesLoaded,
-      timestamp: status.lastRefresh
+      message: 'Cancellation service refreshed successfully',
+      curatedServicesCount: status.curatedServicesCount
     });
   } catch (error) {
     console.error('Error refreshing cancellation data:', error);
@@ -709,7 +708,7 @@ app.get('/api/cancellation-links/status', (_req: Request, res: Response) => {
 // GET /api/demo/subscriptions - Get mock streaming subscriptions for demo
 app.get('/api/demo/subscriptions', (_req: Request, res: Response) => {
   const totals = calculateMockTotals();
-  
+
   const subscriptions = MOCK_STREAMING_SUBSCRIPTIONS.map((sub) => ({
     id: sub.stream_id,
     name: sub.merchant_name,

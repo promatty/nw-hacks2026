@@ -18,7 +18,7 @@ export function initializeGemini(apiKey?: string) {
     throw new Error("Gemini API key is required");
   }
   genAI = new GoogleGenerativeAI(key);
-  model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-light" });
+  model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
 }
 
 /**
