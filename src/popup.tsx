@@ -1,5 +1,6 @@
 import React from "react"
 import { useEffect, useState } from "react"
+import "./style.css"
 import { initializeGemini, sendPromptWithStreaming } from "~gemini"
 import spotifyData from "./data/spotify-listening-history.json"
 import Burny, { type BurnyExpression } from "./components/Burny"
@@ -276,7 +277,8 @@ days since last used: ${daysSinceLastPlay}`
           maxHeight: 600,
           overflowY: "auto",
           padding: 16,
-          fontFamily: "system-ui, -apple-system, sans-serif"
+          fontFamily: "system-ui, -apple-system, sans-serif",
+          border: "3px solid #F97316"
         }}>
         <h2 style={{ margin: "0 0 16px 0", fontSize: 18 }}>
           RoastMySubs
@@ -353,7 +355,8 @@ days since last used: ${daysSinceLastPlay}`
         maxHeight: 600,
         overflowY: "auto",
         padding: 16,
-        fontFamily: "system-ui, -apple-system, sans-serif"
+        fontFamily: "system-ui, -apple-system, sans-serif",
+        border: "3px solid #F97316"
       }}>
       {/* Header with back button */}
       <div style={{ display: "flex", alignItems: "center", marginBottom: 16, gap: 8 }}>
