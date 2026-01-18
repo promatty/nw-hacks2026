@@ -5,7 +5,7 @@
   "description": "Track your subscriptions and reach your financial goals.",
   "author": "Matthew",
   "scripts": {
-    "dev": "plasmo dev --verbose",
+    "dev": "plasmo dev",
     "build": "plasmo build",
     "package": "plasmo package"
   },

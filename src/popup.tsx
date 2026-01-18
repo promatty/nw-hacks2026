@@ -1,5 +1,6 @@
 import React from "react"
 import { useEffect, useState } from "react"
+import { motion } from "framer-motion"
 import "./style.css"
 import { initializeGemini, sendPromptWithStreaming } from "~gemini"
 import Burny, { type BurnyExpression } from "./components/Burny"
@@ -26,6 +27,100 @@ interface CachedRoast {
   lastVisit: string
   roastMessage: string
   timestamp: number
+}
+
+interface WastedBreakdown {
+  subscriptionName: string
+  daysSinceVisit: number
+  wastedAmount: number
+}
+
+// Price map for known services (CAD)
+const SERVICE_PRICES_CAD: Record<string, number> = {
+  'netflix.com': 16.49,
+  'spotify.com': 11.99,
+  'disneyplus.com': 11.99,
+  'youtube.com': 13.99,
+  'primevideo.com': 9.99,
+  'amazon.com': 9.99,
+  'max.com': 16.99,
+  'hulu.com': 9.99,
+  'apple.com': 12.99,
+  'tv.apple.com': 12.99,
+  'crunchyroll.com': 12.99,
+}
+
+function extractDomain(url: string): string | null {
+  try {
+    const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`)
+    return urlObj.hostname.toLowerCase().replace(/^www\./, '')
+  } catch {
+    return null
+  }
+}
+
+function getMonthlyCost(subscription: Subscription): number | null {
+  if (!subscription.url) return null
+
+  const domain = extractDomain(subscription.url)
+  if (!domain) return null
+
+  // Check exact match first
+  if (SERVICE_PRICES_CAD[domain]) {
+    return SERVICE_PRICES_CAD[domain]
+  }
+
+  // Check if domain ends with any known service
+  for (const [serviceDomain, price] of Object.entries(SERVICE_PRICES_CAD)) {
+    if (domain.endsWith(serviceDomain) || domain.includes(serviceDomain.split('.')[0])) {
+      return price
+    }
+  }
+
+  return null
+}
+
+function calculateTotalMoneyWasted(subscriptions: Subscription[]): {
+  totalWasted: number
+  breakdown: WastedBreakdown[]
+} {
+  const now = new Date()
+  const breakdown: WastedBreakdown[] = []
+  let totalWasted = 0
+
+  for (const sub of subscriptions) {
+    const monthlyCost = getMonthlyCost(sub)
+    if (monthlyCost === null) continue
+
+    let daysSinceVisit: number
+    if (!sub.last_visit) {
+      // Never visited - full 30 days wasted
+      daysSinceVisit = 30
+    } else {
+      const lastVisit = new Date(sub.last_visit)
+      daysSinceVisit = Math.floor((now.getTime() - lastVisit.getTime()) / (1000 * 60 * 60 * 24))
+    }
+
+    // Cap at 30 days
+    const cappedDays = Math.min(daysSinceVisit, 30)
+
+    // Calculate waste: (days / 30) * monthly cost
+    const wastedAmount = (cappedDays / 30) * monthlyCost
+
+    if (wastedAmount > 0) {
+      totalWasted += wastedAmount
+      breakdown.push({
+        subscriptionName: sub.name,
+        daysSinceVisit: cappedDays,
+        wastedAmount,
+      })
+    }
+  }
+
+  return {
+    totalWasted: Math.round(totalWasted * 100) / 100,
+    breakdown: breakdown.sort((a, b) => b.wastedAmount - a.wastedAmount),
+  }
 }
 
 const API_BASE = "http://localhost:3000/api"
@@ -107,6 +202,7 @@ function IndexPopup() {
   const [geminiLoading, setGeminiLoading] = useState(false)
   const [burnyExpression, setBurnyExpression] = useState<BurnyExpression>("neutral")
   const [targetedSubscription, setTargetedSubscription] = useState<string | null>(null)
+  const [daysSinceLastUsed, setDaysSinceLastUsed] = useState<number | null>(null)
 
   // Subscription manager state
   const [userId, setUserId] = useState<string | null>(null)
@@ -126,6 +222,21 @@ function IndexPopup() {
 
   // Debug state
   const [debugExpanded, setDebugExpanded] = useState<string | null>(null)
+
+  // Money wasted state
+  const [moneyWasted, setMoneyWasted] = useState<{
+    totalWasted: number
+    breakdown: WastedBreakdown[]
+  } | null>(null)
+
+  // Calculate money wasted when subscriptions change
+  useEffect(() => {
+    if (subscriptions.length > 0 && !loading) {
+      setMoneyWasted(calculateTotalMoneyWasted(subscriptions))
+    } else {
+      setMoneyWasted(null)
+    }
+  }, [subscriptions, loading])
 
   useEffect(() => {
     getUserId().then((id) => {
@@ -350,6 +461,7 @@ function IndexPopup() {
         // No wasted subscriptions - Burny stays quiet
         setBurnyExpression("happy")
         setTargetedSubscription(null)
+        setDaysSinceLastUsed(null)
         setGeminiResponse("You're using all your subscriptions! Nothing to roast here.")
         setGeminiLoading(false)
         return
@@ -366,6 +478,7 @@ function IndexPopup() {
         console.log(`[Popup] Using cached roast`)
         setBurnyExpression("savage")
         setTargetedSubscription(cached.subscriptionName)
+        setDaysSinceLastUsed(wasted.daysSinceLastVisit)
         setGeminiResponse(cached.roastMessage)
         setGeminiLoading(false)
         return
@@ -374,6 +487,7 @@ function IndexPopup() {
       // Set savage expression for roasting
       setBurnyExpression("savage")
       setTargetedSubscription(wasted.subscription.name)
+      setDaysSinceLastUsed(wasted.daysSinceLastVisit)
 
       // Create personalized prompt for a single roast
 const prompt = `You write a brutal Twitter roast. No filter.
@@ -423,7 +537,7 @@ Rules:
       <div
         style={{
           width: 380,
-          maxHeight: 600,
+          maxHeight: 850,
           overflowY: "auto",
           padding: 16,
           fontFamily: "system-ui, -apple-system, sans-serif",
@@ -435,7 +549,7 @@ Rules:
         </h2>
 
         {/* Targeted Subscription Name */}
-        {targetedSubscription && (
+        {targetedSubscription && daysSinceLastUsed !== null && (
           <div
             style={{
               marginBottom: 8,
@@ -448,7 +562,7 @@ Rules:
               color: "#92400E",
               textAlign: "center"
             }}>
-            {targetedSubscription}
+            {`You haven't used ${targetedSubscription} in ${daysSinceLastUsed} day${daysSinceLastUsed === 1 ? '' : 's'}`}
           </div>
         )}
 
@@ -477,6 +591,48 @@ Rules:
           }}>
           Manage Subscriptions
         </button>
+
+        {/* Money Wasted Display */}
+        {moneyWasted && moneyWasted.totalWasted > 0 && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ type: "spring", stiffness: 300, damping: 25 }}
+            style={{
+              marginTop: 16,
+              padding: "16px 20px",
+              background: "linear-gradient(135deg, #DC2626 0%, #F97316 100%)",
+              borderRadius: 12,
+              textAlign: "center",
+              boxShadow: "0 4px 15px rgba(249, 115, 22, 0.3)",
+            }}>
+            <div style={{
+              fontSize: 11,
+              fontWeight: 500,
+              color: "rgba(255, 255, 255, 0.9)",
+              textTransform: "uppercase",
+              letterSpacing: "0.5px",
+              marginBottom: 4,
+            }}>
+              Money Wasted (30 Days)
+            </div>
+            <div style={{
+              fontSize: 36,
+              fontWeight: 700,
+              color: "#FFFFFF",
+              lineHeight: 1.1,
+            }}>
+              ${moneyWasted.totalWasted.toFixed(2)}
+            </div>
+            <div style={{
+              fontSize: 11,
+              color: "rgba(255, 255, 255, 0.8)",
+              marginTop: 4,
+            }}>
+              on {moneyWasted.breakdown.length} unused subscription{moneyWasted.breakdown.length !== 1 ? 's' : ''}
+            </div>
+          </motion.div>
+        )}
       </div>
     )
   }
