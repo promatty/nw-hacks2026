@@ -343,25 +343,36 @@ function CheckoutDetector() {
   const [pattern, setPattern] = useState<CheckoutPattern | null>(null)
   const [spending, setSpending] = useState<CategorySpending | null>(null)
   const [dismissed, setDismissed] = useState(false)
-  const [checked, setChecked] = useState(false)
 
   useEffect(() => {
-    const checkPage = async () => {
-      if (checked) return
-      setChecked(true)
+    console.log("[RoastMySubs] CheckoutDetector mounted, starting detection...")
+    let lastCheckedUrl = ""
 
+    const checkPage = async () => {
       const currentUrl = window.location.href
+      console.log("[RoastMySubs] Checking URL:", currentUrl)
+      
+      // Skip if URL hasn't changed
+      if (currentUrl === lastCheckedUrl) {
+        console.log("[RoastMySubs] URL already checked, skipping")
+        return
+      }
+      lastCheckedUrl = currentUrl
+
       const matchedPattern = detectCheckoutPage(currentUrl)
+      console.log("[RoastMySubs] Pattern match result:", matchedPattern)
 
       if (matchedPattern) {
         console.log("[RoastMySubs] Checkout page detected:", matchedPattern.service)
         setPattern(matchedPattern)
+        setDismissed(false) // Reset dismissed state for new URL
 
         // Check if already dismissed for this session
         const dismissKey = `dismissed_${matchedPattern.service}_${new Date().toDateString()}`
         try {
           const stored = sessionStorage.getItem(dismissKey)
           if (stored) {
+            console.log("[RoastMySubs] Already dismissed for this session")
             setDismissed(true)
             return
           }
@@ -371,29 +382,52 @@ function CheckoutDetector() {
 
         // Fetch spending data (Plaid first, fallback to mock)
         const userId = await getUserId()
+        console.log("[RoastMySubs] Fetching spending for user:", userId, "category:", matchedPattern.category)
         const spendingData = await fetchPlaidCategorySpending(userId, matchedPattern.category)
+        console.log("[RoastMySubs] Spending data received:", spendingData)
         
         if (spendingData && spendingData.monthlyTotal > 0) {
+          console.log("[RoastMySubs] Setting spending data, popup should show!")
           setSpending(spendingData)
+        } else {
+          console.log("[RoastMySubs] No spending data or monthlyTotal is 0")
         }
+      } else {
+        console.log("[RoastMySubs] Not a checkout page")
+        // Clear pattern if not on a checkout page
+        setPattern(null)
+        setSpending(null)
       }
     }
 
-    // Check immediately and also on URL changes (for SPAs)
+    // Check immediately
     checkPage()
 
     // Listen for URL changes (for single-page apps)
+    let lastUrl = window.location.href
     const observer = new MutationObserver(() => {
       const currentUrl = window.location.href
-      if (!checked) {
+      if (currentUrl !== lastUrl) {
+        console.log("[RoastMySubs] URL changed from", lastUrl, "to", currentUrl)
+        lastUrl = currentUrl
         checkPage()
       }
     })
 
     observer.observe(document.body, { childList: true, subtree: true })
 
-    return () => observer.disconnect()
-  }, [checked])
+    // Also listen for popstate (browser back/forward)
+    const handlePopState = () => {
+      console.log("[RoastMySubs] Popstate event detected")
+      checkPage()
+    }
+    window.addEventListener('popstate', handlePopState)
+
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('popstate', handlePopState)
+    }
+  }, [])
 
   const handleDismiss = () => {
     setDismissed(true)
