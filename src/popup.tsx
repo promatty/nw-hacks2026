@@ -1,7 +1,6 @@
 import React from "react"
 import { useEffect, useState } from "react"
 import { initializeGemini, sendPromptWithStreaming } from "~gemini"
-import spotifyData from "./data/spotify-listening-history.json"
 import Burny, { type BurnyExpression } from "./components/Burny"
 
 interface Subscription {
@@ -72,6 +71,9 @@ function IndexPopup() {
   const [editName, setEditName] = useState("")
   const [editUrl, setEditUrl] = useState("")
 
+  // Debug state
+  const [debugExpanded, setDebugExpanded] = useState<string | null>(null)
+
   useEffect(() => {
     getUserId().then((id) => {
       setUserId(id)
@@ -122,6 +124,23 @@ function IndexPopup() {
       fetchSubscriptions(userId)
     }
   }, [userId])
+
+  // Auto-trigger roast when subscriptions are loaded (only once per home view visit)
+  const [hasAutoRoasted, setHasAutoRoasted] = useState(false)
+  useEffect(() => {
+    if (subscriptions.length > 0 && !loading && !hasAutoRoasted && view === "home") {
+      setHasAutoRoasted(true)
+      testGemini()
+    }
+  }, [subscriptions, loading, hasAutoRoasted, view])
+
+  // Reset hasAutoRoasted and refresh data when returning to home view
+  useEffect(() => {
+    if (view === "home" && userId) {
+      setHasAutoRoasted(false)
+      fetchSubscriptions(userId, true)
+    }
+  }, [view])
 
   // Auto-refresh subscriptions every 3 seconds when in manager view
   useEffect(() => {
@@ -224,35 +243,79 @@ function IndexPopup() {
     }
   }
 
+  // Debug: update subscription stats
+  const handleDebugUpdate = async (id: string, updates: { visit_count?: number; last_visit?: string; total_time_seconds?: number }) => {
+    if (!userId) return
+    try {
+      const response = await fetch(`${API_BASE}/subscriptions/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates)
+      })
+      if (!response.ok) {
+        throw new Error("Failed to update subscription")
+      }
+      await fetchSubscriptions(userId)
+      notifySubscriptionsUpdated()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update")
+    }
+  }
+
+  // Find the most wasted subscription (not visited in 5+ days, pick longest absence)
+  const findMostWastedSubscription = (): { subscription: Subscription; daysSinceLastVisit: number } | null => {
+    const now = new Date()
+    const WASTE_THRESHOLD_DAYS = 5
+
+    let worstOffender: { subscription: Subscription; daysSinceLastVisit: number } | null = null
+
+    for (const sub of subscriptions) {
+      if (!sub.last_visit) continue
+
+      const lastVisit = new Date(sub.last_visit)
+      const daysSince = Math.floor((now.getTime() - lastVisit.getTime()) / (1000 * 60 * 60 * 24))
+
+      if (daysSince >= WASTE_THRESHOLD_DAYS) {
+        if (!worstOffender || daysSince > worstOffender.daysSinceLastVisit) {
+          worstOffender = { subscription: sub, daysSinceLastVisit: daysSince }
+        }
+      }
+    }
+
+    return worstOffender
+  }
+
   const testGemini = async () => {
     setGeminiLoading(true)
     setGeminiResponse("")
     setBurnyExpression("evil")
     try {
-      // Check if user has been active recently
-      const now = new Date()
-      const mostRecentPlay = new Date(spotifyData.items[0]?.played_at || 0)
-      const daysSinceLastPlay = Math.floor((now.getTime() - mostRecentPlay.getTime()) / (1000 * 60 * 60 * 24))
-      const hasRecentActivity = daysSinceLastPlay <= 7
+      // Find the most wasted subscription
+      const wasted = findMostWastedSubscription()
 
-      // Set expression based on activity
-      setBurnyExpression(hasRecentActivity ? "happy" : "savage")
+      if (!wasted) {
+        // No wasted subscriptions - Burny stays quiet
+        setBurnyExpression("happy")
+        setGeminiResponse("You're using all your subscriptions! Nothing to roast here.")
+        setGeminiLoading(false)
+        return
+      }
 
-      // Create personalized prompt
-      const prompt = `You are a subscription manager assistant with a sassy personality. Your job is to track subscriptions and roast users for ones they don't use.
+      // Set savage expression for roasting
+      setBurnyExpression("savage")
+
+      // Create personalized prompt for the worst offender
+      const prompt = `You are a subscription manager assistant with a sassy personality. Your job is to roast users for subscriptions they don't use.
 
 Examples:
 - "$45 down the drain in 3 months. You're literally paying to NOT watch TV."
 - "Gym membership unused for 6 months? That's $180 for a very expensive guilt trip."
 - "Spotify Premium while you listen to YouTube? Congratulations on your donation to Sweden."
 
-For active subscriptions: brief positive note.
+Keep it snappy. One or two sentences max. Be savage but funny.
 
-Keep it snappy. No paragraphs.
-
-Here's the data:
-service: Spotify
-days since last used: ${daysSinceLastPlay}`
+Roast this user for wasting money on their ${wasted.subscription.name} subscription.
+They haven't used it in ${wasted.daysSinceLastVisit} days.`
 
       await sendPromptWithStreaming(
         prompt,
@@ -504,6 +567,56 @@ days since last used: ${daysSinceLastPlay}`
                       </button>
                     </div>
                   </div>
+                  {/* Debug Toggle */}
+                  <button
+                    onClick={() => setDebugExpanded(debugExpanded === sub.id ? null : sub.id)}
+                    style={{
+                      padding: "4px 8px",
+                      borderRadius: 4,
+                      border: "1px dashed #9CA3AF",
+                      background: "transparent",
+                      cursor: "pointer",
+                      fontSize: 10,
+                      color: "#9CA3AF",
+                      marginTop: 8
+                    }}>
+                    {debugExpanded === sub.id ? "Hide Debug" : "Debug"}
+                  </button>
+                  {/* Debug Panel */}
+                  {debugExpanded === sub.id && (
+                    <div style={{ marginTop: 8, padding: 8, background: "#FEF3C7", borderRadius: 4, fontSize: 11 }}>
+                      <div style={{ marginBottom: 6, fontWeight: 500, color: "#92400E" }}>Debug: Edit Stats</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ width: 80, color: "#78350F" }}>Visits:</span>
+                          <input
+                            type="number"
+                            defaultValue={sub.visit_count}
+                            onBlur={(e) => handleDebugUpdate(sub.id, { visit_count: parseInt(e.target.value) || 0 })}
+                            style={{ flex: 1, padding: "4px 6px", borderRadius: 4, border: "1px solid #D97706", fontSize: 11 }}
+                          />
+                        </label>
+                        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ width: 80, color: "#78350F" }}>Last Visit:</span>
+                          <input
+                            type="datetime-local"
+                            defaultValue={sub.last_visit ? new Date(sub.last_visit).toISOString().slice(0, 16) : ""}
+                            onBlur={(e) => handleDebugUpdate(sub.id, { last_visit: new Date(e.target.value).toISOString() })}
+                            style={{ flex: 1, padding: "4px 6px", borderRadius: 4, border: "1px solid #D97706", fontSize: 11 }}
+                          />
+                        </label>
+                        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ width: 80, color: "#78350F" }}>Time (sec):</span>
+                          <input
+                            type="number"
+                            defaultValue={sub.total_time_seconds}
+                            onBlur={(e) => handleDebugUpdate(sub.id, { total_time_seconds: parseInt(e.target.value) || 0 })}
+                            style={{ flex: 1, padding: "4px 6px", borderRadius: 4, border: "1px solid #D97706", fontSize: 11 }}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )
             })}
