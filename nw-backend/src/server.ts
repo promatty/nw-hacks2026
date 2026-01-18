@@ -1,7 +1,13 @@
 import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
+
+// Get __dirname equivalent for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import { Products } from 'plaid';
 import * as plaidService from './services/plaidService.js';
 import type {
@@ -38,6 +44,9 @@ const supabase = createClient(
 app.use(cors());
 app.use(express.json());
 app.set('json spaces', 2);
+
+// Serve static files (for Plaid Link page)
+app.use('/static', express.static(path.join(__dirname, 'public')));
 
 // Request logging
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -84,6 +93,11 @@ app.get('/', (_req: Request, res: Response) => {
 
 app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Serve Plaid Link page
+app.get('/plaid-link', (_req: Request, res: Response) => {
+  res.sendFile(path.join(__dirname, 'public', 'plaid-link.html'));
 });
 
 // ============================================================================
