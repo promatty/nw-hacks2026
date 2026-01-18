@@ -36,5 +36,6 @@ RoastMySubs is a Chrome extension that connects to your bank via Plaid to automa
 -Budget goals and spending alerts
 -Mobile companion app to monitor Apple Pay payments, credit card use, etc. 
 
-* (Source: 11fs.com) https://www.11fs.com/article/subscription-trends-to-watch-in-2025#:~:text=With%20the%20average%20US%20consumer,app%20to%20manage%20their%20subscriptions.
-** (Source: C+R Research) https://www.crresearch.com/blog/subscription-service-statistics-and-costs/
+\* (Source: 11fs.com) https://www.11fs.com/article/subscription-trends-to-watch-in-2025#:~:text=With%20the%20average%20US%20consumer,app%20to%20manage%20their%20subscriptions.
+
+\*\* (Source: C+R Research) https://www.crresearch.com/blog/subscription-service-statistics-and-costs/
