@@ -1,8 +1,8 @@
 {
-  "name": "nw-hacks2026",
-  "displayName": "Nw hacks2026",
+  "name": "roastmysubs",
+  "displayName": "RoastMySubs",
   "version": "0.0.1",
-  "description": "A basic Plasmo extension.",
+  "description": "Track your subscriptions and reach your financial goals.",
   "author": "Matthew",
   "scripts": {
     "dev": "plasmo dev",
