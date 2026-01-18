@@ -52,6 +52,15 @@ async function getUserId(): Promise<string> {
 }
 
 function IndexPopup() {
+  // View state
+  const [view, setView] = useState<"home" | "manager">("home")
+
+  // Gemini state
+  const [geminiResponse, setGeminiResponse] = useState("")
+  const [geminiLoading, setGeminiLoading] = useState(false)
+  const [burnyExpression, setBurnyExpression] = useState<BurnyExpression>("neutral")
+
+  // Subscription manager state
   const [userId, setUserId] = useState<string | null>(null)
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([])
   const [loading, setLoading] = useState(true)
@@ -62,9 +71,6 @@ function IndexPopup() {
   const [editing, setEditing] = useState<Subscription | null>(null)
   const [editName, setEditName] = useState("")
   const [editUrl, setEditUrl] = useState("")
-  const [geminiResponse, setGeminiResponse] = useState("")
-  const [geminiLoading, setGeminiLoading] = useState(false)
-  const [burnyExpression, setBurnyExpression] = useState<BurnyExpression>("neutral")
 
   useEffect(() => {
     getUserId().then((id) => {
@@ -210,8 +216,8 @@ For active subscriptions: brief positive note.
 
 Keep it snappy. No paragraphs.
 
-Here's the data: 
-service: Spotify 
+Here's the data:
+service: Spotify
 days since last used: ${daysSinceLastPlay}`
 
       await sendPromptWithStreaming(
@@ -227,106 +233,111 @@ days since last used: ${daysSinceLastPlay}`
     }
   }
 
+  // Render home view
+  if (view === "home") {
+    return (
+      <div
+        style={{
+          width: 350,
+          maxHeight: 600,
+          overflowY: "auto",
+          padding: 16,
+          fontFamily: "system-ui, -apple-system, sans-serif"
+        }}>
+        <h2 style={{ margin: "0 0 16px 0", fontSize: 18 }}>
+          RoastMySubs
+        </h2>
+
+        {/* Burny Mascot */}
+        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'center' }}>
+          <Burny
+            expression={burnyExpression}
+            message={geminiResponse || "Click below to check your Spotify usage!"}
+            size={150}
+          />
+        </div>
+
+        {/* Gemini Test Button */}
+        <div style={{ marginBottom: 16 }}>
+          <button
+            onClick={testGemini}
+            disabled={geminiLoading}
+            style={{
+              padding: "8px 16px",
+              borderRadius: 6,
+              border: "none",
+              background: "#10A37F",
+              color: "white",
+              fontSize: 14,
+              cursor: geminiLoading ? "not-allowed" : "pointer",
+              opacity: geminiLoading ? 0.6 : 1,
+              width: "100%"
+            }}>
+            {geminiLoading ? "Testing Gemini..." : "Test Gemini"}
+          </button>
+          {geminiResponse && (
+            <div
+              style={{
+                marginTop: 8,
+                padding: "8px 12px",
+                background: "#F0F9FF",
+                border: "1px solid #BAE6FD",
+                borderRadius: 6,
+                fontSize: 13,
+                color: "#0C4A6E"
+              }}>
+              {geminiResponse}
+            </div>
+          )}
+        </div>
+
+        {/* Manage Subscriptions Button */}
+        <button
+          onClick={() => setView("manager")}
+          style={{
+            padding: "8px 16px",
+            borderRadius: 6,
+            border: "1px solid #4F46E5",
+            background: "white",
+            color: "#4F46E5",
+            fontSize: 14,
+            fontWeight: 500,
+            cursor: "pointer",
+            width: "100%"
+          }}>
+          Manage Subscriptions
+        </button>
+      </div>
+    )
+  }
+
+  // Render subscription manager view
   return (
     <div
       style={{
         width: 350,
-        minHeight: 400,
+        maxHeight: 600,
+        overflowY: "auto",
         padding: 16,
         fontFamily: "system-ui, -apple-system, sans-serif"
       }}>
-      <h2 style={{ margin: "0 0 16px 0", fontSize: 18 }}>
-        RoastMySubs
-      </h2>
-
-      {/* Burny Mascot */}
-      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'center' }}>
-        <Burny
-          expression={burnyExpression}
-          message={geminiResponse || "Click below to check your Spotify usage!"}
-          size={150}
-        />
-      </div>
-
-      {/* Gemini Test Button */}
-      <div style={{ marginBottom: 16 }}>
+      {/* Header with back button */}
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 16, gap: 8 }}>
         <button
-          onClick={testGemini}
-          disabled={geminiLoading}
+          onClick={() => setView("home")}
           style={{
-            padding: "8px 16px",
-            borderRadius: 6,
-            border: "none",
-            background: "#10A37F",
-            color: "white",
-            fontSize: 14,
-            cursor: geminiLoading ? "not-allowed" : "pointer",
-            opacity: geminiLoading ? 0.6 : 1,
-            width: "100%"
-          }}>
-          {geminiLoading ? "Testing Gemini..." : "Test Gemini"}
-        </button>
-        {geminiResponse && (
-          <div
-            style={{
-              marginTop: 8,
-              padding: "8px 12px",
-              background: "#F0F9FF",
-              border: "1px solid #BAE6FD",
-              borderRadius: 6,
-              fontSize: 13,
-              color: "#0C4A6E"
-            }}>
-            {geminiResponse}
-          </div>
-        )}
-      </div>
-
-      {/* Add subscription form */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
-        <input
-          type="text"
-          placeholder="Subscription name"
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          onKeyDown={handleKeyDown}
-          disabled={adding}
-          style={{
-            padding: "8px 12px",
-            borderRadius: 6,
+            padding: "4px 8px",
+            borderRadius: 4,
             border: "1px solid #ddd",
+            background: "white",
+            cursor: "pointer",
             fontSize: 14
-          }}
-        />
-        <input
-          type="url"
-          placeholder="URL"
-          value={newUrl}
-          onChange={(e) => setNewUrl(e.target.value)}
-          onKeyDown={handleKeyDown}
-          disabled={adding}
-          style={{
-            padding: "8px 12px",
-            borderRadius: 6,
-            border: "1px solid #ddd",
-            fontSize: 14
-          }}
-        />
-        <button
-          onClick={handleAdd}
-          disabled={adding || !newName.trim()}
-          style={{
-            padding: "8px 16px",
-            borderRadius: 6,
-            border: "none",
-            background: "#4F46E5",
-            color: "white",
-            fontSize: 14,
-            cursor: adding || !newName.trim() ? "not-allowed" : "pointer",
-            opacity: adding || !newName.trim() ? 0.6 : 1
           }}>
-          {adding ? "Adding..." : "Add Subscription"}
+          ← Back
         </button>
+        <h2 style={{ margin: 0, fontSize: 18, flex: 1 }}>
+          Manage Subscriptions
+        </h2>
       </div>
 
       {/* Error message */}
@@ -338,97 +349,188 @@ days since last used: ${daysSinceLastPlay}`
             background: "#FEE2E2",
             color: "#DC2626",
             borderRadius: 6,
-            fontSize: 13
+            fontSize: 12
           }}>
           {error}
         </div>
       )}
 
       {/* Subscriptions list */}
-      {loading ? (
-        <div style={{ textAlign: "center", color: "#666", padding: 20 }}>
-          Loading...
-        </div>
-      ) : subscriptions.length === 0 ? (
-        <div style={{ textAlign: "center", color: "#666", padding: 20 }}>
-          No subscriptions yet. Add one above!
-        </div>
-      ) : (
+      <div>
+        <h3 style={{ margin: "0 0 12px 0", fontSize: 14, fontWeight: 500 }}>
+          Your Subscriptions
+        </h3>
+        {loading ? (
+          <div style={{ textAlign: "center", color: "#666", padding: 20, fontSize: 13 }}>
+            Loading...
+          </div>
+        ) : subscriptions.length === 0 ? (
+          <div style={{ textAlign: "center", color: "#666", padding: 20, fontSize: 13 }}>
+            No subscriptions yet. Add one above!
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {subscriptions.map((sub) => {
+              // Format last visit
+              const formatLastVisit = (dateString: string) => {
+                if (!dateString) return "Never"
+                const date = new Date(dateString)
+                const now = new Date()
+                const diffMs = now.getTime() - date.getTime()
+                const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+
+                if (diffDays === 0) return "Today"
+                if (diffDays === 1) return "Yesterday"
+                if (diffDays < 7) return `${diffDays} days ago`
+                if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`
+                if (diffDays < 365) return `${Math.floor(diffDays / 30)} months ago`
+                return `${Math.floor(diffDays / 365)} years ago`
+              }
+
+              // Format total time
+              const formatTotalTime = (seconds: number) => {
+                if (seconds < 60) return `${seconds}s`
+                const minutes = Math.floor(seconds / 60)
+                if (minutes < 60) return `${minutes}m`
+                const hours = Math.floor(minutes / 60)
+                if (hours < 24) return `${hours}h`
+                const days = Math.floor(hours / 24)
+                return `${days}d`
+              }
+
+              return (
+                <div
+                  key={sub.id}
+                  style={{
+                    padding: "10px 12px",
+                    background: "#F9FAFB",
+                    borderRadius: 6,
+                    border: "1px solid #E5E7EB"
+                  }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: 8 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>
+                        {sub.name}
+                      </div>
+                      {sub.url && (
+                        <a
+                          href={sub.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            fontSize: 11,
+                            color: "#6B7280",
+                            textDecoration: "none",
+                            display: "block",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            marginBottom: 6
+                          }}>
+                          {sub.url}
+                        </a>
+                      )}
+                      {/* Usage Statistics */}
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, fontSize: 11, color: "#6B7280" }}>
+                        <span>{sub.visit_count} visits</span>
+                        <span>•</span>
+                        <span>Last: {formatLastVisit(sub.last_visit)}</span>
+                        <span>•</span>
+                        <span>Time: {formatTotalTime(sub.total_time_seconds)}</span>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 4, flexShrink: 0, marginLeft: 8 }}>
+                      <button
+                        onClick={() => openEdit(sub)}
+                        style={{
+                          padding: "6px 10px",
+                          borderRadius: 4,
+                          border: "1px solid #E5E7EB",
+                          background: "white",
+                          cursor: "pointer",
+                          fontSize: 11,
+                          fontWeight: 500,
+                          color: "#374151"
+                        }}>
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDelete(sub.id)}
+                        style={{
+                          padding: "6px 10px",
+                          borderRadius: 4,
+                          border: "none",
+                          background: "#EF4444",
+                          color: "white",
+                          fontSize: 11,
+                          fontWeight: 500,
+                          cursor: "pointer"
+                        }}>
+                        Del
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Add subscription form */}
+      <div style={{ marginTop: 16, padding: 12, background: "#F9FAFB", borderRadius: 6 }}>
+        <h3 style={{ margin: "0 0 12px 0", fontSize: 14, fontWeight: 500 }}>
+          Add New Subscription
+        </h3>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {subscriptions.map((sub) => (
-            <div
-              key={sub.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "10px 12px",
-                background: "#F9FAFB",
-                borderRadius: 6,
-                border: "1px solid #E5E7EB"
-              }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 500 }}>{sub.name}</div>
-                {sub.url && (
-                  <a
-                    href={sub.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      fontSize: 12,
-                      color: "#6B7280",
-                      textDecoration: "none",
-                      display: "block",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap"
-                    }}>
-                    {sub.url}
-                  </a>
-                )}
-              </div>
-              <div style={{ display: "flex", gap: 4, flexShrink: 0, marginLeft: 8 }}>
-                <button
-                  onClick={() => openEdit(sub)}
-                  style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: 4,
-                    border: "none",
-                    background: "#E5E7EB",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center"
-                  }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-                    <path d="m15 5 4 4" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => handleDelete(sub.id)}
-                  style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: 4,
-                    border: "none",
-                    background: "#EF4444",
-                    color: "white",
-                    fontSize: 14,
-                    fontWeight: 500,
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center"
-                  }}>
-                  X
-                </button>
-              </div>
-            </div>
-          ))}
+          <input
+            type="text"
+            placeholder="Name (e.g., Netflix)"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={adding}
+            style={{
+              padding: "8px 12px",
+              borderRadius: 6,
+              border: "1px solid #ddd",
+              fontSize: 13,
+              outline: "none"
+            }}
+          />
+          <input
+            type="url"
+            placeholder="URL (optional)"
+            value={newUrl}
+            onChange={(e) => setNewUrl(e.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={adding}
+            style={{
+              padding: "8px 12px",
+              borderRadius: 6,
+              border: "1px solid #ddd",
+              fontSize: 13,
+              outline: "none"
+            }}
+          />
+          <button
+            onClick={handleAdd}
+            disabled={adding || !newName.trim()}
+            style={{
+              padding: "8px 12px",
+              borderRadius: 6,
+              border: "none",
+              background: "#4F46E5",
+              color: "white",
+              fontSize: 13,
+              fontWeight: 500,
+              cursor: adding || !newName.trim() ? "not-allowed" : "pointer",
+              opacity: adding || !newName.trim() ? 0.6 : 1
+            }}>
+            {adding ? "Adding..." : "Add"}
+          </button>
         </div>
-      )}
+      </div>
 
       {/* Edit Modal */}
       {editing && (
@@ -450,10 +552,12 @@ days since last used: ${daysSinceLastPlay}`
               background: "white",
               padding: 20,
               borderRadius: 8,
-              width: 300,
+              width: 280,
               boxShadow: "0 4px 20px rgba(0,0,0,0.2)"
             }}>
-            <h3 style={{ margin: "0 0 16px 0", fontSize: 16 }}>Edit Subscription</h3>
+            <h3 style={{ margin: "0 0 16px 0", fontSize: 16, fontWeight: 600 }}>
+              Edit Subscription
+            </h3>
             <input
               type="text"
               placeholder="Name"
@@ -464,9 +568,10 @@ days since last used: ${daysSinceLastPlay}`
                 padding: "8px 12px",
                 borderRadius: 6,
                 border: "1px solid #ddd",
-                fontSize: 14,
-                marginBottom: 8,
-                boxSizing: "border-box"
+                fontSize: 13,
+                marginBottom: 12,
+                boxSizing: "border-box",
+                outline: "none"
               }}
             />
             <input
@@ -479,9 +584,10 @@ days since last used: ${daysSinceLastPlay}`
                 padding: "8px 12px",
                 borderRadius: 6,
                 border: "1px solid #ddd",
-                fontSize: 14,
+                fontSize: 13,
                 marginBottom: 16,
-                boxSizing: "border-box"
+                boxSizing: "border-box",
+                outline: "none"
               }}
             />
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
@@ -492,7 +598,8 @@ days since last used: ${daysSinceLastPlay}`
                   borderRadius: 6,
                   border: "1px solid #ddd",
                   background: "white",
-                  fontSize: 14,
+                  fontSize: 13,
+                  fontWeight: 500,
                   cursor: "pointer"
                 }}>
                 Cancel
@@ -506,7 +613,8 @@ days since last used: ${daysSinceLastPlay}`
                   border: "none",
                   background: "#4F46E5",
                   color: "white",
-                  fontSize: 14,
+                  fontSize: 13,
+                  fontWeight: 500,
                   cursor: !editName.trim() ? "not-allowed" : "pointer",
                   opacity: !editName.trim() ? 0.6 : 1
                 }}>
