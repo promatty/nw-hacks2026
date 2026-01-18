@@ -2,7 +2,6 @@ import React from "react"
 import { useEffect, useState } from "react"
 import "./style.css"
 import { initializeGemini, sendPromptWithStreaming } from "~gemini"
-import spotifyData from "./data/spotify-listening-history.json"
 import Burny, { type BurnyExpression } from "./components/Burny"
 // TEMPORARILY DISABLED - Plaid integration
 // import { PlaidLinkButton, ConnectedAccounts } from "./components/PlaidLinkButton"
@@ -21,64 +20,16 @@ interface Subscription {
   updated_at: string
 }
 
+interface CachedRoast {
+  subscriptionId: string
+  subscriptionName: string
+  lastVisit: string
+  roastMessage: string
+  timestamp: number
+}
+
 const API_BASE = "http://localhost:3000/api"
-
-// Hardcoded CAD prices for common services
-const SERVICE_PRICES_CAD: Record<string, number> = {
-  'netflix.com': 16.49,
-  'spotify.com': 11.99,
-  'disneyplus.com': 11.99,
-  'youtube.com': 13.99,
-  'primevideo.com': 9.99,
-  'amazon.com': 9.99,
-  'max.com': 16.99,
-  'hulu.com': 9.99,
-  'apple.com': 12.99,
-  'tv.apple.com': 12.99,
-  'crunchyroll.com': 12.99,
-}
-
-// Get monthly price for a subscription URL
-function getMonthlyPrice(url: string | null): number | null {
-  if (!url) return null
-  try {
-    const hostname = new URL(url.startsWith('http') ? url : `https://${url}`).hostname.toLowerCase()
-    // Check exact match first
-    for (const [domain, price] of Object.entries(SERVICE_PRICES_CAD)) {
-      if (hostname === domain || hostname.endsWith('.' + domain)) {
-        return price
-      }
-    }
-    return null
-  } catch {
-    return null
-  }
-}
-
-// Calculate $/hour rate
-function calculateDollarPerHour(totalSeconds: number, monthlyPrice: number): number | null {
-  const hours = totalSeconds / 3600
-  if (hours <= 0) return null
-  return monthlyPrice / hours
-}
-
-// Calculate money wasted this month
-function calculateMoneyWasted(wastedDays: number, monthlyPrice: number): number {
-  return (wastedDays / 30) * monthlyPrice
-}
-
-// Calculate days since last visit (simple version for demo)
-function calculateTotalWastedDays(subscription: Subscription): number {
-  if (!subscription.last_visit) {
-    return 0
-  }
-
-  const now = new Date()
-  const lastVisit = new Date(subscription.last_visit)
-  const daysSinceLastVisit = Math.floor((now.getTime() - lastVisit.getTime()) / (1000 * 60 * 60 * 24))
-
-  return Math.max(0, daysSinceLastVisit)
-}
+const ROAST_CACHE_KEY = "cachedRoast"
 
 function generateUUID(): string {
   return crypto.randomUUID()
@@ -113,6 +64,40 @@ async function getUserId(): Promise<string> {
   return newId
 }
 
+// Cache helpers for roasts
+async function getCachedRoast(): Promise<CachedRoast | null> {
+  try {
+    if (chrome?.storage?.local) {
+      return new Promise((resolve) => {
+        chrome.storage.local.get([ROAST_CACHE_KEY], (result) => {
+          resolve(result[ROAST_CACHE_KEY] || null)
+        })
+      })
+    }
+  } catch (e) {
+    // chrome.storage.local not available
+  }
+  // Fallback to localStorage
+  const cached = localStorage.getItem(ROAST_CACHE_KEY)
+  return cached ? JSON.parse(cached) : null
+}
+
+async function saveCachedRoast(roast: CachedRoast): Promise<void> {
+  try {
+    if (chrome?.storage?.local) {
+      return new Promise((resolve) => {
+        chrome.storage.local.set({ [ROAST_CACHE_KEY]: roast }, () => {
+          resolve()
+        })
+      })
+    }
+  } catch (e) {
+    // chrome.storage.local not available
+  }
+  // Fallback to localStorage
+  localStorage.setItem(ROAST_CACHE_KEY, JSON.stringify(roast))
+}
+
 function IndexPopup() {
   // View state
   const [view, setView] = useState<"home" | "manager">("home")
@@ -121,6 +106,7 @@ function IndexPopup() {
   const [geminiResponse, setGeminiResponse] = useState("")
   const [geminiLoading, setGeminiLoading] = useState(false)
   const [burnyExpression, setBurnyExpression] = useState<BurnyExpression>("neutral")
+  const [targetedSubscription, setTargetedSubscription] = useState<string | null>(null)
 
   // Subscription manager state
   const [userId, setUserId] = useState<string | null>(null)
@@ -137,6 +123,9 @@ function IndexPopup() {
   // TEMPORARILY DISABLED - Plaid state
   // const [activeTab, setActiveTab] = useState<"plaid" | "manual">("plaid")
   // const [plaidRefreshKey, setPlaidRefreshKey] = useState(0)
+
+  // Debug state
+  const [debugExpanded, setDebugExpanded] = useState<string | null>(null)
 
   useEffect(() => {
     getUserId().then((id) => {
@@ -189,7 +178,24 @@ function IndexPopup() {
     }
   }, [userId])
 
-  // Auto-refresh subscriptions every 30 seconds when in manager view
+  // Auto-trigger roast when subscriptions are loaded (only once per home view visit)
+  const [hasAutoRoasted, setHasAutoRoasted] = useState(false)
+  useEffect(() => {
+    if (subscriptions.length > 0 && !loading && !hasAutoRoasted && view === "home") {
+      setHasAutoRoasted(true)
+      testGemini()
+    }
+  }, [subscriptions, loading, hasAutoRoasted, view])
+
+  // Reset hasAutoRoasted and refresh data when returning to home view
+  useEffect(() => {
+    if (view === "home" && userId) {
+      setHasAutoRoasted(false)
+      fetchSubscriptions(userId, true)
+    }
+  }, [view])
+
+  // Auto-refresh subscriptions every 3 seconds when in manager view
   useEffect(() => {
     if (!userId || view !== "manager") return
 
@@ -290,42 +296,114 @@ function IndexPopup() {
     }
   }
 
+  // Debug: update subscription stats
+  const handleDebugUpdate = async (id: string, updates: { visit_count?: number; last_visit?: string; total_time_seconds?: number }) => {
+    if (!userId) return
+    try {
+      const response = await fetch(`${API_BASE}/subscriptions/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates)
+      })
+      if (!response.ok) {
+        throw new Error("Failed to update subscription")
+      }
+      await fetchSubscriptions(userId)
+      notifySubscriptionsUpdated()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update")
+    }
+  }
+
+  // Find the most wasted subscription (not visited in 5+ days, pick longest absence)
+  const findMostWastedSubscription = (): { subscription: Subscription; daysSinceLastVisit: number } | null => {
+    const now = new Date()
+    const WASTE_THRESHOLD_DAYS = 5
+
+    let worstOffender: { subscription: Subscription; daysSinceLastVisit: number } | null = null
+
+    for (const sub of subscriptions) {
+      if (!sub.last_visit) continue
+
+      const lastVisit = new Date(sub.last_visit)
+      const daysSince = Math.floor((now.getTime() - lastVisit.getTime()) / (1000 * 60 * 60 * 24))
+
+      if (daysSince >= WASTE_THRESHOLD_DAYS) {
+        if (!worstOffender || daysSince > worstOffender.daysSinceLastVisit) {
+          worstOffender = { subscription: sub, daysSinceLastVisit: daysSince }
+        }
+      }
+    }
+
+    return worstOffender
+  }
+
   const testGemini = async () => {
     setGeminiLoading(true)
     setGeminiResponse("")
     setBurnyExpression("evil")
     try {
-      // Check if user has been active recently
-      const now = new Date()
-      const mostRecentPlay = new Date(spotifyData.items[0]?.played_at || 0)
-      const daysSinceLastPlay = Math.floor((now.getTime() - mostRecentPlay.getTime()) / (1000 * 60 * 60 * 24))
-      const hasRecentActivity = daysSinceLastPlay <= 7
+      // Find the most wasted subscription
+      const wasted = findMostWastedSubscription()
 
-      // Set expression based on activity
-      setBurnyExpression(hasRecentActivity ? "happy" : "savage")
+      if (!wasted) {
+        // No wasted subscriptions - Burny stays quiet
+        setBurnyExpression("happy")
+        setTargetedSubscription(null)
+        setGeminiResponse("You're using all your subscriptions! Nothing to roast here.")
+        setGeminiLoading(false)
+        return
+      }
 
-      // Create personalized prompt
-      const prompt = `You are a subscription manager assistant with a sassy personality. Your job is to track subscriptions and roast users for ones they don't use.
+      // Check cache before calling Gemini
+      const cached = await getCachedRoast()
+      if (
+        cached &&
+        cached.subscriptionId === wasted.subscription.id &&
+        cached.lastVisit === wasted.subscription.last_visit
+      ) {
+        // Use cached roast
+        console.log(`[Popup] Using cached roast`)
+        setBurnyExpression("savage")
+        setTargetedSubscription(cached.subscriptionName)
+        setGeminiResponse(cached.roastMessage)
+        setGeminiLoading(false)
+        return
+      }
 
-Examples:
-- "$45 down the drain in 3 months. You're literally paying to NOT watch TV."
-- "Gym membership unused for 6 months? That's $180 for a very expensive guilt trip."
-- "Spotify Premium while you listen to YouTube? Congratulations on your donation to Sweden."
+      // Set savage expression for roasting
+      setBurnyExpression("savage")
+      setTargetedSubscription(wasted.subscription.name)
 
-For active subscriptions: brief positive note.
+      // Create personalized prompt for a single roast
+const prompt = `You write a brutal Twitter roast. No filter.
 
-Keep it snappy. No paragraphs.
+Roast this person for wasting money on ${wasted.subscription.name} despite not even using it.
 
-Here's the data:
-service: Spotify
-days since last used: ${daysSinceLastPlay}`
+Rules:
+- Write like you're ratio'ing someone on twitter
+- You know what ${wasted.subscription.name} is - mock what it's actually for
+- 1-2 sentences max, keep it short, punchy, and either sarcastic, snarky, or witty.
+- Return ONLY the roast text, nothing else`
 
+      let roastMessage = ""
       await sendPromptWithStreaming(
         prompt,
         (chunk) => {
-          setGeminiResponse((prev) => prev + chunk)
+          roastMessage += chunk
+          setGeminiResponse(roastMessage)
         }
       )
+
+      // Save roast to cache
+      await saveCachedRoast({
+        subscriptionId: wasted.subscription.id,
+        subscriptionName: wasted.subscription.name,
+        lastVisit: wasted.subscription.last_visit,
+        roastMessage: roastMessage.trim(),
+        timestamp: Date.now()
+      })
+      console.log(`[Popup] Saved roast to cache`)
     } catch (error) {
       setGeminiResponse(`Error: ${error instanceof Error ? error.message : "Failed to get response"}`)
     } finally {
@@ -341,17 +419,6 @@ days since last used: ${daysSinceLastPlay}`
 
   // Render home view
   if (view === "home") {
-    // Calculate total money wasted across all subscriptions
-    const totalMoneyWasted = subscriptions.reduce((total, sub) => {
-      const monthlyPrice = getMonthlyPrice(sub.url)
-      if (!monthlyPrice) return total
-      const totalWastedDays = calculateTotalWastedDays(sub)
-      const wasted = calculateMoneyWasted(totalWastedDays, monthlyPrice)
-      console.log(`[DEBUG] ${sub.name}: wastedDays=${totalWastedDays}, price=${monthlyPrice}, wasted=$${wasted.toFixed(2)}`)
-      return total + wasted
-    }, 0)
-    console.log(`[DEBUG] Total subscriptions: ${subscriptions.length}, Total money wasted: $${totalMoneyWasted.toFixed(2)}`)
-
     return (
       <div
         style={{
@@ -363,191 +430,36 @@ days since last used: ${daysSinceLastPlay}`
           border: "3px solid #F97316",
           background: "#FAFAFA"
         }}>
-        {/* Header */}
-        <div style={{ 
-          display: "flex", 
-          alignItems: "center", 
-          justifyContent: "space-between",
-          marginBottom: 16
-        }}>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: "#111827" }}>
-            🔥 RoastMySubs
-          </h2>
-          <button
-            onClick={testGemini}
-            disabled={geminiLoading}
+        <h2 style={{ margin: "0 0 16px 0", fontSize: 18 }}>
+          RoastMySubs
+        </h2>
+
+        {/* Targeted Subscription Name */}
+        {targetedSubscription && (
+          <div
             style={{
+              marginBottom: 8,
               padding: "6px 12px",
+              background: "#FEF3C7",
+              border: "1px solid #F59E0B",
               borderRadius: 6,
-              border: "none",
-              background: geminiLoading ? "#9CA3AF" : "#10A37F",
-              color: "white",
-              fontSize: 12,
+              fontSize: 13,
               fontWeight: 500,
-              cursor: geminiLoading ? "not-allowed" : "pointer",
+              color: "#92400E",
+              textAlign: "center"
             }}>
-            {geminiLoading ? "..." : "🤖 Roast Me"}
-          </button>
-        </div>
+            {targetedSubscription}
+          </div>
+        )}
 
         {/* Burny Mascot */}
         <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'center' }}>
           <Burny
             expression={burnyExpression}
-            message={geminiResponse || "Connect your bank to track subscriptions!"}
-            size={120}
+            message={geminiResponse || (geminiLoading ? "Loading..." : "Checking your subscriptions...")}
+            size={150}
           />
         </div>
-
-        {/* Total Money Wasted */}
-        {totalMoneyWasted > 0 && (() => {
-          const isGreen = totalMoneyWasted < 5
-          const isYellow = totalMoneyWasted >= 5 && totalMoneyWasted <= 20
-          const bgColor = isGreen ? "#D1FAE5" : isYellow ? "#FEF3C7" : "#FEE2E2"
-          const borderColor = isGreen ? "#059669" : isYellow ? "#D97706" : "#DC2626"
-          const textColor = isGreen ? "#059669" : isYellow ? "#B45309" : "#DC2626"
-          const subTextColor = isGreen ? "#047857" : isYellow ? "#92400E" : "#991B1B"
-          return (
-            <div style={{
-              marginBottom: 16,
-              padding: "12px 16px",
-              background: bgColor,
-              border: `2px solid ${borderColor}`,
-              borderRadius: 8,
-              textAlign: "center"
-            }}>
-              <div style={{ fontSize: 24, fontWeight: 700, color: textColor }}>
-                ${totalMoneyWasted.toFixed(2)} wasted
-              </div>
-              <div style={{ fontSize: 12, color: subTextColor, marginTop: 4 }}>
-                since last use
-              </div>
-            </div>
-          )
-        })()}
-
-        {/* TEMPORARILY DISABLED - Connected Accounts & Plaid Link */}
-        {/* {userId && (
-          <div style={{ marginBottom: 16 }}>
-            <ConnectedAccounts
-              userId={userId}
-              onDisconnect={() => setPlaidRefreshKey(prev => prev + 1)}
-            />
-            <PlaidLinkButton
-              userId={userId}
-              onSuccess={handlePlaidSuccess}
-            />
-          </div>
-        )} */}
-
-        {/* TEMPORARILY DISABLED - Tabs */}
-        {/* <div style={{
-          display: "flex",
-          gap: 4,
-          marginBottom: 12,
-          background: "#E5E7EB",
-          padding: 4,
-          borderRadius: 8
-        }}>
-          <button
-            onClick={() => setActiveTab("plaid")}
-            style={{
-              flex: 1,
-              padding: "8px 12px",
-              borderRadius: 6,
-              border: "none",
-              background: activeTab === "plaid" ? "#FFFFFF" : "transparent",
-              color: activeTab === "plaid" ? "#111827" : "#6B7280",
-              fontSize: 13,
-              fontWeight: 500,
-              cursor: "pointer",
-              boxShadow: activeTab === "plaid" ? "0 1px 2px rgba(0,0,0,0.1)" : "none"
-            }}>
-            💳 Auto-Detected
-          </button>
-          <button
-            onClick={() => setActiveTab("manual")}
-            style={{
-              flex: 1,
-              padding: "8px 12px",
-              borderRadius: 6,
-              border: "none",
-              background: activeTab === "manual" ? "#FFFFFF" : "transparent",
-              color: activeTab === "manual" ? "#111827" : "#6B7280",
-              fontSize: 13,
-              fontWeight: 500,
-              cursor: "pointer",
-              boxShadow: activeTab === "manual" ? "0 1px 2px rgba(0,0,0,0.1)" : "none"
-            }}>
-            ✏️ Manual
-          </button>
-        </div> */}
-
-        {/* TEMPORARILY DISABLED - Plaid Subscriptions Tab */}
-        {/* {activeTab === "plaid" && userId && (
-          <div key={plaidRefreshKey}>
-            <PlaidSubscriptions userId={userId} useMockData={false} />
-          </div>
-        )} */}
-
-        {/* Manual Subscriptions - now always visible */}
-        {true && (
-          <>
-            {/* Manage Subscriptions Button */}
-            <button
-              onClick={() => setView("manager")}
-              style={{
-                padding: "12px 16px",
-                borderRadius: 8,
-                border: "1px solid #4F46E5",
-                background: "white",
-                color: "#4F46E5",
-                fontSize: 14,
-                fontWeight: 500,
-                cursor: "pointer",
-                width: "100%",
-                marginBottom: 12
-              }}>
-              📝 Manage Manual Subscriptions
-            </button>
-            
-            {/* Quick add form */}
-            <div style={{ display: "flex", gap: 8 }}>
-              <input
-                type="text"
-                placeholder="Add subscription..."
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={handleKeyDown}
-                disabled={adding}
-                style={{
-                  flex: 1,
-                  padding: "8px 12px",
-                  borderRadius: 6,
-                  border: "1px solid #ddd",
-                  fontSize: 13,
-                  outline: "none"
-                }}
-              />
-              <button
-                onClick={handleAdd}
-                disabled={adding || !newName.trim()}
-                style={{
-                  padding: "8px 16px",
-                  borderRadius: 6,
-                  border: "none",
-                  background: "#4F46E5",
-                  color: "white",
-                  fontSize: 13,
-                  fontWeight: 500,
-                  cursor: adding || !newName.trim() ? "not-allowed" : "pointer",
-                  opacity: adding || !newName.trim() ? 0.6 : 1
-                }}>
-                +
-              </button>
-            </div>
-          </>
-        )}
 
         {/* Manage Subscriptions Button */}
         <button
@@ -555,9 +467,9 @@ days since last used: ${daysSinceLastPlay}`
           style={{
             padding: "8px 16px",
             borderRadius: 6,
-            border: "none",
-            background: "#F97316",
-            color: "white",
+            border: "1px solid #F59E0B",
+            background: "#FEF3C7",
+            color: "#92400E",
             fontSize: 14,
             fontWeight: 500,
             cursor: "pointer",
@@ -647,24 +559,16 @@ days since last used: ${daysSinceLastPlay}`
                 return `${Math.floor(diffDays / 365)} years ago`
               }
 
-              // Format total time (more detailed for cost analysis)
+              // Format total time
               const formatTotalTime = (seconds: number) => {
                 if (seconds < 60) return `${seconds}s`
-                const totalMinutes = Math.floor(seconds / 60)
-                const hours = Math.floor(totalMinutes / 60)
-                const minutes = totalMinutes % 60
-                if (hours === 0) return `${minutes}m`
-                if (hours < 24) return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`
+                const minutes = Math.floor(seconds / 60)
+                if (minutes < 60) return `${minutes}m`
+                const hours = Math.floor(minutes / 60)
+                if (hours < 24) return `${hours}h`
                 const days = Math.floor(hours / 24)
-                const remainingHours = hours % 24
-                return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`
+                return `${days}d`
               }
-
-              // Get price info for this subscription
-              const monthlyPrice = getMonthlyPrice(sub.url)
-              const dollarPerHour = monthlyPrice && sub.total_time_seconds > 0
-                ? calculateDollarPerHour(sub.total_time_seconds, monthlyPrice)
-                : null
 
               return (
                 <div
@@ -706,37 +610,6 @@ days since last used: ${daysSinceLastPlay}`
                         <span>•</span>
                         <span>Time: {formatTotalTime(sub.total_time_seconds)}</span>
                       </div>
-                      {/* Cost Analysis */}
-                      {monthlyPrice && (
-                        <div style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: 4,
-                          fontSize: 11,
-                          marginTop: 4,
-                        }}>
-                          {/* $/Hour Row */}
-                          <div style={{
-                            display: "flex",
-                            flexWrap: "wrap",
-                            gap: 8,
-                            padding: "4px 8px",
-                            background: !dollarPerHour || dollarPerHour > 100 ? "#FEE2E2" : dollarPerHour >= 1 ? "#FEF3C7" : "#D1FAE5",
-                            borderRadius: 4
-                          }}>
-                            <span style={{ fontWeight: 500 }}>${monthlyPrice.toFixed(2)}/mo</span>
-                            <span>•</span>
-                            <span style={{
-                              fontWeight: 600,
-                              color: !dollarPerHour || dollarPerHour > 100 ? "#DC2626" : dollarPerHour >= 1 ? "#B45309" : "#059669"
-                            }}>
-                              {dollarPerHour
-                                ? `$${dollarPerHour.toFixed(2)}/hr`
-                                : "No usage yet"}
-                            </span>
-                          </div>
-                        </div>
-                      )}
                     </div>
                     <div style={{ display: "flex", gap: 4, flexShrink: 0, marginLeft: 8 }}>
                       <button
@@ -778,6 +651,56 @@ days since last used: ${daysSinceLastPlay}`
                       </button>
                     </div>
                   </div>
+                  {/* Debug Toggle */}
+                  <button
+                    onClick={() => setDebugExpanded(debugExpanded === sub.id ? null : sub.id)}
+                    style={{
+                      padding: "4px 8px",
+                      borderRadius: 4,
+                      border: "1px dashed #9CA3AF",
+                      background: "transparent",
+                      cursor: "pointer",
+                      fontSize: 10,
+                      color: "#9CA3AF",
+                      marginTop: 8
+                    }}>
+                    {debugExpanded === sub.id ? "Hide Debug" : "Debug"}
+                  </button>
+                  {/* Debug Panel */}
+                  {debugExpanded === sub.id && (
+                    <div style={{ marginTop: 8, padding: 8, background: "#FEF3C7", borderRadius: 4, fontSize: 11 }}>
+                      <div style={{ marginBottom: 6, fontWeight: 500, color: "#92400E" }}>Debug: Edit Stats</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ width: 80, color: "#78350F" }}>Visits:</span>
+                          <input
+                            type="number"
+                            defaultValue={sub.visit_count}
+                            onBlur={(e) => handleDebugUpdate(sub.id, { visit_count: parseInt(e.target.value) || 0 })}
+                            style={{ flex: 1, padding: "4px 6px", borderRadius: 4, border: "1px solid #D97706", fontSize: 11 }}
+                          />
+                        </label>
+                        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ width: 80, color: "#78350F" }}>Last Visit:</span>
+                          <input
+                            type="datetime-local"
+                            defaultValue={sub.last_visit ? new Date(sub.last_visit).toISOString().slice(0, 16) : ""}
+                            onBlur={(e) => handleDebugUpdate(sub.id, { last_visit: new Date(e.target.value).toISOString() })}
+                            style={{ flex: 1, padding: "4px 6px", borderRadius: 4, border: "1px solid #D97706", fontSize: 11 }}
+                          />
+                        </label>
+                        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ width: 80, color: "#78350F" }}>Time (sec):</span>
+                          <input
+                            type="number"
+                            defaultValue={sub.total_time_seconds}
+                            onBlur={(e) => handleDebugUpdate(sub.id, { total_time_seconds: parseInt(e.target.value) || 0 })}
+                            style={{ flex: 1, padding: "4px 6px", borderRadius: 4, border: "1px solid #D97706", fontSize: 11 }}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )
             })}

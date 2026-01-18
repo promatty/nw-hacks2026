@@ -27,23 +27,25 @@ const Burny: React.FC<BurnyProps> = ({
 
   // Idle floating animation
   const floatAnimation = {
-    y: [0, -10, 0],
-    transition: {
-      duration: 2,
-      repeat: Infinity,
-      ease: "easeInOut" as const
-    }
+    y: [0, -10, 0]
+  };
+
+  const floatTransition = {
+    duration: 2,
+    repeat: Infinity,
+    ease: "easeInOut" as const
   };
 
   // Flame flicker animation
   const flickerAnimation = {
     scale: [1, 1.05, 0.98, 1.02, 1],
-    opacity: [0.9, 1, 0.95, 1, 0.9],
-    transition: {
-      duration: 1.5,
-      repeat: Infinity,
-      ease: "easeInOut" as const
-    }
+    opacity: [0.9, 1, 0.95, 1, 0.9]
+  };
+
+  const flickerTransition = {
+    duration: 1.5,
+    repeat: Infinity,
+    ease: "easeInOut" as const
   };
 
   // Expression definitions with anime-style features
@@ -277,6 +279,7 @@ const Burny: React.FC<BurnyProps> = ({
         viewBox="0 0 360 400"
         style={{ overflow: 'visible' }}
         animate={floatAnimation}
+        transition={floatTransition}
       >
         {/* Flame body layers */}
         <defs>
@@ -304,35 +307,23 @@ const Burny: React.FC<BurnyProps> = ({
           fill="url(#flameGradient1)"
           filter="url(#glow)"
           animate={flickerAnimation}
+          transition={flickerTransition}
         />
 
         {/* Middle flame */}
         <motion.path
           d="M 180 70 Q 155 95 150 140 Q 145 180 155 220 Q 165 260 180 300 Q 195 260 205 220 Q 215 180 210 140 Q 205 95 180 70 Z"
           fill="url(#flameGradient2)"
-          animate={{
-            scale: [1, 1.08, 0.95, 1.03, 1],
-            transition: {
-              duration: 1.2,
-              repeat: Infinity,
-              ease: "easeInOut"
-            }
-          }}
+          animate={{ scale: [1, 1.08, 0.95, 1.03, 1] }}
+          transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" as const }}
         />
 
         {/* Inner flame (hottest part) */}
         <motion.path
           d="M 180 100 Q 170 120 168 150 Q 166 180 175 210 Q 180 230 180 250 Q 180 230 185 210 Q 194 180 192 150 Q 190 120 180 100 Z"
           fill="#FFFACD"
-          animate={{
-            scale: [1, 1.15, 0.9, 1.1, 1],
-            opacity: [0.9, 1, 0.85, 1, 0.9],
-            transition: {
-              duration: 0.8,
-              repeat: Infinity,
-              ease: "easeInOut"
-            }
-          }}
+          animate={{ scale: [1, 1.15, 0.9, 1.1, 1], opacity: [0.9, 1, 0.85, 1, 0.9] }}
+          transition={{ duration: 0.8, repeat: Infinity, ease: "easeInOut" as const }}
         />
 
         {/* Face container */}
