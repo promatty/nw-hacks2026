@@ -4,8 +4,7 @@ import { motion } from "framer-motion"
 import "./style.css"
 import { initializeGemini, sendPromptWithStreaming } from "~gemini"
 import Burny, { type BurnyExpression } from "./components/Burny"
-import { PlaidLinkButton, ConnectedAccounts } from "./components/PlaidLinkButton"
-import PlaidSubscriptions from "./components/PlaidSubscriptions"
+import { PlaidLinkButton } from "./components/PlaidLinkButton"
 
 interface Subscription {
   id: string
@@ -18,6 +17,23 @@ interface Subscription {
   user_id: string
   created_at: string
   updated_at: string
+}
+
+// Unified subscription type for display
+interface UnifiedSubscription {
+  id: string
+  name: string
+  url: string | null
+  amount: number | null
+  frequency: string | null
+  lastDate: string | null
+  isActive: boolean
+  source: 'manual' | 'plaid'
+  // Manual-specific fields
+  visit_count?: number
+  total_time_seconds?: number
+  // Original data for editing
+  originalManual?: Subscription
 }
 
 interface CachedRoast {
@@ -274,7 +290,6 @@ function IndexPopup() {
   const [editUrl, setEditUrl] = useState("")
 
   // Plaid state
-  const [activeTab, setActiveTab] = useState<"plaid" | "manual">("plaid")
   const [plaidRefreshKey, setPlaidRefreshKey] = useState(0)
   const [plaidSubscriptions, setPlaidSubscriptions] = useState<any[]>([])
   const [plaidLoading, setPlaidLoading] = useState(false)
@@ -291,6 +306,65 @@ function IndexPopup() {
     totalWasted: number
     breakdown: WastedBreakdown[]
   } | null>(null)
+
+  // Create unified subscription list from both sources
+  const unifiedSubscriptions: UnifiedSubscription[] = React.useMemo(() => {
+    const unified: UnifiedSubscription[] = []
+
+    // Add Plaid subscriptions first
+    for (const plaidSub of plaidSubscriptions) {
+      unified.push({
+        id: plaidSub.streamId,
+        name: plaidSub.merchantName,
+        url: null,
+        amount: plaidSub.amount,
+        frequency: plaidSub.frequency,
+        lastDate: plaidSub.lastDate,
+        isActive: plaidSub.isActive,
+        source: 'plaid'
+      })
+    }
+
+    // Add manual subscriptions
+    for (const sub of subscriptions) {
+      unified.push({
+        id: sub.id,
+        name: sub.name,
+        url: sub.url,
+        amount: getMonthlyCost(sub),
+        frequency: 'monthly',
+        lastDate: sub.last_visit,
+        isActive: true,
+        source: 'manual',
+        visit_count: sub.visit_count,
+        total_time_seconds: sub.total_time_seconds,
+        originalManual: sub
+      })
+    }
+
+    return unified
+  }, [subscriptions, plaidSubscriptions])
+
+  // Check if a subscription already exists (by name or URL)
+  const isDuplicateSubscription = (name: string, url: string | null): boolean => {
+    const normalizedName = name.toLowerCase().trim()
+    const normalizedUrl = url ? extractDomain(url) : null
+
+    for (const sub of unifiedSubscriptions) {
+      // Check name match
+      if (sub.name.toLowerCase().trim() === normalizedName) {
+        return true
+      }
+      // Check URL match (if both have URLs)
+      if (normalizedUrl && sub.url) {
+        const existingDomain = extractDomain(sub.url)
+        if (existingDomain === normalizedUrl) {
+          return true
+        }
+      }
+    }
+    return false
+  }
 
   // Calculate money wasted when subscriptions or Plaid subscriptions change
   useEffect(() => {
@@ -392,6 +466,14 @@ function IndexPopup() {
   const handleAdd = async () => {
     if (!newName.trim() || !userId) return
 
+    // Check for duplicates
+    const urlToCheck = newUrl.trim() || null
+    if (isDuplicateSubscription(newName.trim(), urlToCheck)) {
+      setError("A subscription with this name or URL already exists")
+      setTimeout(() => setError(null), 3000)
+      return
+    }
+
     setAdding(true)
     try {
       const response = await fetch(`${API_BASE}/subscriptions`, {
@@ -400,7 +482,7 @@ function IndexPopup() {
         body: JSON.stringify({
           user_id: userId,
           name: newName.trim(),
-          url: newUrl.trim() || null
+          url: urlToCheck
         })
       })
       if (!response.ok) {
@@ -837,50 +919,6 @@ Rules:
         </h2>
       </div>
 
-      {/* Tab switcher */}
-      <div style={{
-        display: "flex",
-        gap: 8,
-        marginBottom: 16,
-        padding: 4,
-        background: "#374151",
-        borderRadius: 8,
-        border: "1px solid #4B5563"
-      }}>
-        <button
-          onClick={() => setActiveTab("plaid")}
-          style={{
-            flex: 1,
-            padding: "8px 12px",
-            borderRadius: 6,
-            border: "none",
-            background: activeTab === "plaid" ? "#F97316" : "transparent",
-            color: activeTab === "plaid" ? "#FFFFFF" : "#9CA3AF",
-            fontSize: 13,
-            fontWeight: 500,
-            cursor: "pointer",
-            transition: "all 0.2s"
-          }}>
-          Auto-Detected ({plaidSubscriptions.length})
-        </button>
-        <button
-          onClick={() => setActiveTab("manual")}
-          style={{
-            flex: 1,
-            padding: "8px 12px",
-            borderRadius: 6,
-            border: "none",
-            background: activeTab === "manual" ? "#F97316" : "transparent",
-            color: activeTab === "manual" ? "#FFFFFF" : "#9CA3AF",
-            fontSize: 13,
-            fontWeight: 500,
-            cursor: "pointer",
-            transition: "all 0.2s"
-          }}>
-          Manual ({subscriptions.length})
-        </button>
-      </div>
-
       {/* Error message */}
       {error && (
         <div
@@ -896,237 +934,236 @@ Rules:
         </div>
       )}
 
-      {/* Plaid Tab Content */}
-      {activeTab === "plaid" && (
-        <div>
-          <h3 style={{ margin: "0 0 12px 0", fontSize: 14, fontWeight: 500, color: "#D1D5DB" }}>
-            Bank-Detected Subscriptions
-          </h3>
-
-          {/* Plaid Link Button */}
-          {userId && (
-            <div style={{ marginBottom: 16 }}>
-              <PlaidLinkButton userId={userId} onSuccess={handlePlaidSuccess} />
-            </div>
-          )}
-
-          {/* Plaid Subscriptions */}
-          {userId && (
-            <PlaidSubscriptions
-              key={plaidRefreshKey}
-              userId={userId}
-              useMockData={false}
-            />
-          )}
+      {/* Plaid Link Button */}
+      {userId && (
+        <div style={{ marginBottom: 16 }}>
+          <PlaidLinkButton userId={userId} onSuccess={handlePlaidSuccess} />
         </div>
       )}
 
-      {/* Manual Tab Content */}
-      {activeTab === "manual" && (
-        <div>
-          <h3 style={{ margin: "0 0 12px 0", fontSize: 14, fontWeight: 500, color: "#D1D5DB" }}>
-            Manually Tracked Subscriptions
-          </h3>
-          {loading ? (
-            <div style={{ textAlign: "center", color: "#9CA3AF", padding: 20, fontSize: 13 }}>
-              Loading...
-            </div>
-          ) : subscriptions.length === 0 ? (
-            <div style={{ textAlign: "center", color: "#9CA3AF", padding: 20, fontSize: 13 }}>
-              No subscriptions yet. Add one below!
-            </div>
-          ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {subscriptions.map((sub) => {
-              // Format last visit
-              const formatLastVisit = (dateString: string) => {
-                if (!dateString) return "Never"
-                const date = new Date(dateString)
-                const now = new Date()
-                const diffMs = now.getTime() - date.getTime()
-                const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+      {/* Unified Subscription List */}
+      {(loading || plaidLoading) ? (
+        <div style={{ textAlign: "center", color: "#9CA3AF", padding: 20, fontSize: 13 }}>
+          Loading subscriptions...
+        </div>
+      ) : unifiedSubscriptions.length === 0 ? (
+        <div style={{ textAlign: "center", color: "#9CA3AF", padding: 20, fontSize: 13, background: "#374151", borderRadius: 6, border: "1px dashed #4B5563" }}>
+          No subscriptions yet. Connect a bank account or add one manually below.
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {unifiedSubscriptions.map((sub) => {
+            // Format last date
+            const formatLastDate = (dateString: string | null) => {
+              if (!dateString) return "Never"
+              const date = new Date(dateString)
+              const now = new Date()
+              const diffMs = now.getTime() - date.getTime()
+              const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
 
-                if (diffDays === 0) return "Today"
-                if (diffDays === 1) return "Yesterday"
-                if (diffDays < 7) return `${diffDays} days ago`
-                if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`
-                if (diffDays < 365) return `${Math.floor(diffDays / 30)} months ago`
-                return `${Math.floor(diffDays / 365)} years ago`
-              }
+              if (diffDays === 0) return "Today"
+              if (diffDays === 1) return "Yesterday"
+              if (diffDays < 7) return `${diffDays} days ago`
+              if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`
+              if (diffDays < 365) return `${Math.floor(diffDays / 30)} months ago`
+              return `${Math.floor(diffDays / 365)} years ago`
+            }
 
-              // Format total time
-              const formatTotalTime = (seconds: number) => {
-                if (seconds < 60) return `${seconds}s`
-                const minutes = Math.floor(seconds / 60)
-                if (minutes < 60) return `${minutes}m`
-                const hours = Math.floor(minutes / 60)
-                if (hours < 24) return `${hours}h`
-                const days = Math.floor(hours / 24)
-                return `${days}d`
-              }
+            // Format total time for manual subscriptions
+            const formatTotalTime = (seconds: number | undefined) => {
+              if (seconds === undefined) return null
+              if (seconds < 60) return `${seconds}s`
+              const minutes = Math.floor(seconds / 60)
+              if (minutes < 60) return `${minutes}m`
+              const hours = Math.floor(minutes / 60)
+              if (hours < 24) return `${hours}h`
+              const days = Math.floor(hours / 24)
+              return `${days}d`
+            }
 
-              return (
-                <div
-                  key={sub.id}
-                  style={{
-                    padding: "10px 12px",
-                    background: "#374151",
-                    borderRadius: 6,
-                    border: "1px solid #4B5563"
-                  }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: 8 }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4, color: "#F9FAFB" }}>
-                        {sub.name}
-                      </div>
-                      {sub.url && (
-                        <a
-                          href={sub.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{
-                            fontSize: 11,
-                            color: "#9CA3AF",
-                            textDecoration: "none",
-                            display: "block",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                            marginBottom: 6
-                          }}>
-                          {sub.url}
-                        </a>
-                      )}
-                      {/* Usage Statistics */}
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, fontSize: 11, color: "#9CA3AF" }}>
-                        <span>{sub.visit_count} visits</span>
-                        <span>•</span>
-                        <span>Last: {formatLastVisit(sub.last_visit)}</span>
-                        <span>•</span>
-                        <span>Time: {formatTotalTime(sub.total_time_seconds)}</span>
-                      </div>
+            return (
+              <div
+                key={sub.id}
+                style={{
+                  padding: "10px 12px",
+                  background: "#374151",
+                  borderRadius: 6,
+                  border: "1px solid #4B5563"
+                }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4, color: "#F9FAFB" }}>
+                      {sub.name}
                     </div>
-                    <div style={{ display: "flex", gap: 4, flexShrink: 0, marginLeft: 8 }}>
-                      <button
-                        onClick={() => handleCancelSubscription(sub.name)}
-                        disabled={cancellationLoading}
-                        title="Cancel Subscription"
+                    {sub.url && (
+                      <a
+                        href={sub.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
                         style={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: 6,
-                          border: "1px solid #DC2626",
-                          background: "#FEE2E2",
-                          cursor: cancellationLoading ? "not-allowed" : "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          opacity: cancellationLoading ? 0.5 : 1
+                          fontSize: 11,
+                          color: "#9CA3AF",
+                          textDecoration: "none",
+                          display: "block",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          marginBottom: 6
                         }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2">
-                          <circle cx="12" cy="12" r="10"/>
-                          <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
-                        </svg>
-                      </button>
-                      <button
-                        onClick={() => openEdit(sub)}
-                        style={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: 6,
-                          border: "1px solid #4B5563",
-                          background: "#1F2937",
-                          cursor: "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center"
-                        }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-                          <path d="m15 5 4 4"/>
-                        </svg>
-                      </button>
-                      <button
-                        onClick={() => handleDelete(sub.id)}
-                        style={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: 6,
-                          border: "none",
-                          background: "#DC2626",
-                          cursor: "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center"
-                        }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M3 6h18"/>
-                          <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
-                          <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-                        </svg>
-                      </button>
+                        {sub.url}
+                      </a>
+                    )}
+                    {/* Subscription Info */}
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, fontSize: 11, color: "#9CA3AF" }}>
+                      {sub.amount && (
+                        <>
+                          <span>${sub.amount.toFixed(2)}/{sub.frequency === 'annually' ? 'yr' : 'mo'}</span>
+                          <span>•</span>
+                        </>
+                      )}
+                      {sub.source === 'manual' && sub.visit_count !== undefined && (
+                        <>
+                          <span>{sub.visit_count} visits</span>
+                          <span>•</span>
+                        </>
+                      )}
+                      <span>Last: {formatLastDate(sub.lastDate)}</span>
+                      {sub.source === 'manual' && formatTotalTime(sub.total_time_seconds) && (
+                        <>
+                          <span>•</span>
+                          <span>Time: {formatTotalTime(sub.total_time_seconds)}</span>
+                        </>
+                      )}
                     </div>
                   </div>
-                  {/* Debug Toggle */}
-                  <button
-                    onClick={() => setDebugExpanded(debugExpanded === sub.id ? null : sub.id)}
-                    style={{
-                      padding: "4px 8px",
-                      borderRadius: 4,
-                      border: "1px dashed #6B7280",
-                      background: "transparent",
-                      cursor: "pointer",
-                      fontSize: 10,
-                      color: "#6B7280",
-                      marginTop: 8
-                    }}>
-                    {debugExpanded === sub.id ? "Hide Debug" : "Debug"}
-                  </button>
-                  {/* Debug Panel */}
-                  {debugExpanded === sub.id && (
-                    <div style={{ marginTop: 8, padding: 8, background: "#78350F", borderRadius: 4, fontSize: 11 }}>
-                      <div style={{ marginBottom: 6, fontWeight: 500, color: "#FEF3C7" }}>Debug: Edit Stats</div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ width: 80, color: "#FDE68A" }}>Visits:</span>
-                          <input
-                            type="number"
-                            defaultValue={sub.visit_count}
-                            onBlur={(e) => handleDebugUpdate(sub.id, { visit_count: parseInt(e.target.value) || 0 })}
-                            style={{ flex: 1, padding: "4px 6px", borderRadius: 4, border: "1px solid #F59E0B", fontSize: 11, background: "#1F2937", color: "#F9FAFB" }}
-                          />
-                        </label>
-                        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ width: 80, color: "#FDE68A" }}>Last Visit:</span>
-                          <input
-                            type="datetime-local"
-                            defaultValue={sub.last_visit ? new Date(sub.last_visit).toISOString().slice(0, 16) : ""}
-                            onBlur={(e) => handleDebugUpdate(sub.id, { last_visit: new Date(e.target.value).toISOString() })}
-                            style={{ flex: 1, padding: "4px 6px", borderRadius: 4, border: "1px solid #F59E0B", fontSize: 11, background: "#1F2937", color: "#F9FAFB" }}
-                          />
-                        </label>
-                        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ width: 80, color: "#FDE68A" }}>Time (sec):</span>
-                          <input
-                            type="number"
-                            defaultValue={sub.total_time_seconds}
-                            onBlur={(e) => handleDebugUpdate(sub.id, { total_time_seconds: parseInt(e.target.value) || 0 })}
-                            style={{ flex: 1, padding: "4px 6px", borderRadius: 4, border: "1px solid #F59E0B", fontSize: 11, background: "#1F2937", color: "#F9FAFB" }}
-                          />
-                        </label>
-                      </div>
-                    </div>
-                  )}
+                  <div style={{ display: "flex", gap: 4, flexShrink: 0, marginLeft: 8 }}>
+                    <button
+                      onClick={() => handleCancelSubscription(sub.name)}
+                      disabled={cancellationLoading}
+                      title="Cancel Subscription"
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: 6,
+                        border: "1px solid #DC2626",
+                        background: "#FEE2E2",
+                        cursor: cancellationLoading ? "not-allowed" : "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        opacity: cancellationLoading ? 0.5 : 1
+                      }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+                      </svg>
+                    </button>
+                    {sub.source === 'manual' && sub.originalManual && (
+                      <>
+                        <button
+                          onClick={() => openEdit(sub.originalManual!)}
+                          style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 6,
+                            border: "1px solid #4B5563",
+                            background: "#1F2937",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center"
+                          }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                            <path d="m15 5 4 4"/>
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => handleDelete(sub.id)}
+                          style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 6,
+                            border: "none",
+                            background: "#DC2626",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center"
+                          }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M3 6h18"/>
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                          </svg>
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
-              )
-            })}
-          </div>
-        )}
+                {/* Debug Toggle for manual subscriptions */}
+                {sub.source === 'manual' && sub.originalManual && (
+                  <>
+                    <button
+                      onClick={() => setDebugExpanded(debugExpanded === sub.id ? null : sub.id)}
+                      style={{
+                        padding: "4px 8px",
+                        borderRadius: 4,
+                        border: "1px dashed #6B7280",
+                        background: "transparent",
+                        cursor: "pointer",
+                        fontSize: 10,
+                        color: "#6B7280",
+                        marginTop: 8
+                      }}>
+                      {debugExpanded === sub.id ? "Hide Debug" : "Debug"}
+                    </button>
+                    {debugExpanded === sub.id && (
+                      <div style={{ marginTop: 8, padding: 8, background: "#78350F", borderRadius: 4, fontSize: 11 }}>
+                        <div style={{ marginBottom: 6, fontWeight: 500, color: "#FEF3C7" }}>Debug: Edit Stats</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ width: 80, color: "#FDE68A" }}>Visits:</span>
+                            <input
+                              type="number"
+                              defaultValue={sub.originalManual.visit_count}
+                              onBlur={(e) => handleDebugUpdate(sub.id, { visit_count: parseInt(e.target.value) || 0 })}
+                              style={{ flex: 1, padding: "4px 6px", borderRadius: 4, border: "1px solid #F59E0B", fontSize: 11, background: "#1F2937", color: "#F9FAFB" }}
+                            />
+                          </label>
+                          <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ width: 80, color: "#FDE68A" }}>Last Visit:</span>
+                            <input
+                              type="datetime-local"
+                              defaultValue={sub.originalManual.last_visit ? new Date(sub.originalManual.last_visit).toISOString().slice(0, 16) : ""}
+                              onBlur={(e) => handleDebugUpdate(sub.id, { last_visit: new Date(e.target.value).toISOString() })}
+                              style={{ flex: 1, padding: "4px 6px", borderRadius: 4, border: "1px solid #F59E0B", fontSize: 11, background: "#1F2937", color: "#F9FAFB" }}
+                            />
+                          </label>
+                          <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ width: 80, color: "#FDE68A" }}>Time (sec):</span>
+                            <input
+                              type="number"
+                              defaultValue={sub.originalManual.total_time_seconds}
+                              onBlur={(e) => handleDebugUpdate(sub.id, { total_time_seconds: parseInt(e.target.value) || 0 })}
+                              style={{ flex: 1, padding: "4px 6px", borderRadius: 4, border: "1px solid #F59E0B", fontSize: 11, background: "#1F2937", color: "#F9FAFB" }}
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
 
-        {/* Add subscription form */}
-        <div style={{ marginTop: 16, padding: 12, background: "#374151", borderRadius: 6, border: "1px solid #4B5563" }}>
+      {/* Add subscription form */}
+      <div style={{ marginTop: 16, padding: 12, background: "#374151", borderRadius: 6, border: "1px solid #4B5563" }}>
         <h3 style={{ margin: "0 0 12px 0", fontSize: 14, fontWeight: 500, color: "#D1D5DB" }}>
-          Add New Subscription
+          Add Subscription
         </h3>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <input
@@ -1181,8 +1218,6 @@ Rules:
           </button>
         </div>
       </div>
-      </div>
-      )}
 
       {/* Edit Modal */}
       {editing && (
