@@ -374,7 +374,7 @@ Roast this person for wasting money on ${wasted.subscription.name} despite not e
 Rules:
 - Write like you're ratio'ing someone on twitter
 - You know what ${wasted.subscription.name} is - mock what it's actually for
-- 1-2 sentences max, punchy
+- 1-2 sentences max, keep it short, punchy, and either sarcastic, snarky, or witty.
 - Return ONLY the roast text, nothing else`
 
       let roastMessage = ""
