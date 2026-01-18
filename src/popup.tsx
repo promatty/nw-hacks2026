@@ -15,7 +15,16 @@ interface Subscription {
   updated_at: string
 }
 
+interface CachedRoasts {
+  subscriptionId: string
+  subscriptionName: string
+  daysSinceLastVisit: number
+  roastMessages: string[]
+  timestamp: number
+}
+
 const API_BASE = "http://localhost:3000/api"
+const ROAST_CACHE_KEY = "cachedRoast"
 
 function generateUUID(): string {
   return crypto.randomUUID()
@@ -50,6 +59,40 @@ async function getUserId(): Promise<string> {
   return newId
 }
 
+// Cache helpers for roasts
+async function getCachedRoasts(): Promise<CachedRoasts | null> {
+  try {
+    if (chrome?.storage?.local) {
+      return new Promise((resolve) => {
+        chrome.storage.local.get([ROAST_CACHE_KEY], (result) => {
+          resolve(result[ROAST_CACHE_KEY] || null)
+        })
+      })
+    }
+  } catch (e) {
+    // chrome.storage.local not available
+  }
+  // Fallback to localStorage
+  const cached = localStorage.getItem(ROAST_CACHE_KEY)
+  return cached ? JSON.parse(cached) : null
+}
+
+async function saveCachedRoasts(roasts: CachedRoasts): Promise<void> {
+  try {
+    if (chrome?.storage?.local) {
+      return new Promise((resolve) => {
+        chrome.storage.local.set({ [ROAST_CACHE_KEY]: roasts }, () => {
+          resolve()
+        })
+      })
+    }
+  } catch (e) {
+    // chrome.storage.local not available
+  }
+  // Fallback to localStorage
+  localStorage.setItem(ROAST_CACHE_KEY, JSON.stringify(roasts))
+}
+
 function IndexPopup() {
   // View state
   const [view, setView] = useState<"home" | "manager">("home")
@@ -58,6 +101,7 @@ function IndexPopup() {
   const [geminiResponse, setGeminiResponse] = useState("")
   const [geminiLoading, setGeminiLoading] = useState(false)
   const [burnyExpression, setBurnyExpression] = useState<BurnyExpression>("neutral")
+  const [targetedSubscription, setTargetedSubscription] = useState<string | null>(null)
 
   // Subscription manager state
   const [userId, setUserId] = useState<string | null>(null)
@@ -296,33 +340,90 @@ function IndexPopup() {
       if (!wasted) {
         // No wasted subscriptions - Burny stays quiet
         setBurnyExpression("happy")
+        setTargetedSubscription(null)
         setGeminiResponse("You're using all your subscriptions! Nothing to roast here.")
+        setGeminiLoading(false)
+        return
+      }
+
+      // Check cache before calling Gemini
+      const cached = await getCachedRoasts()
+      if (
+        cached &&
+        cached.subscriptionId === wasted.subscription.id &&
+        cached.daysSinceLastVisit === wasted.daysSinceLastVisit &&
+        cached.roastMessages.length > 0
+      ) {
+        // Pick a random roast from cache
+        const randomIndex = Math.floor(Math.random() * cached.roastMessages.length)
+        const randomRoast = cached.roastMessages[randomIndex]
+        console.log(`[Popup] Using cached roast ${randomIndex + 1}/${cached.roastMessages.length}`)
+        setBurnyExpression("savage")
+        setTargetedSubscription(cached.subscriptionName)
+        setGeminiResponse(randomRoast)
         setGeminiLoading(false)
         return
       }
 
       // Set savage expression for roasting
       setBurnyExpression("savage")
+      setTargetedSubscription(wasted.subscription.name)
 
-      // Create personalized prompt for the worst offender
-      const prompt = `You are a subscription manager assistant with a sassy personality. Your job is to roast users for subscriptions they don't use.
+      // Create personalized prompt for 10 roasts
+      const prompt = `You write brutal Twitter roasts. No filter. Think stan twitter meets finance bro energy.
 
-Examples:
-- "$45 down the drain in 3 months. You're literally paying to NOT watch TV."
-- "Gym membership unused for 6 months? That's $180 for a very expensive guilt trip."
-- "Spotify Premium while you listen to YouTube? Congratulations on your donation to Sweden."
+Examples of the vibe:
+- "bestie you haven't opened Netflix in 3 weeks but you'll complain about being broke. the math isn't mathing"
+- "paying for a gym membership you don't use is crazy work. your wallet is getting more of a workout than you"
+- "imagine paying $15/month to ignore Spotify while you watch YouTube ads like a peasant. couldn't be me (it's you)"
+- "that subscription is literally begging you to cancel it. even IT doesn't want your money at this point"
+- "you're basically running a charity for corporations rn. very philanthropic of you bestie"
 
-Keep it snappy. One or two sentences max. Be savage but funny.
+Roast this person for wasting money on ${wasted.subscription.name}. They haven't touched it in ${wasted.daysSinceLastVisit} days.
 
-Roast this user for wasting money on their ${wasted.subscription.name} subscription.
-They haven't used it in ${wasted.daysSinceLastVisit} days.`
+Rules:
+- Write like you're ratio'ing someone on twitter
+- Use lowercase, "bestie", "ngl", "lowkey", "the way", "not you", "imagine", etc
+- Be unhinged but funny, not mean-spirited
+- 1-2 sentences max, punchy
+- Generate exactly 10 different roasts
+- Format: Return ONLY a JSON array of 10 strings, nothing else. Example: ["roast1", "roast2", ...]`
 
+      let fullResponse = ""
       await sendPromptWithStreaming(
         prompt,
         (chunk) => {
-          setGeminiResponse((prev) => prev + chunk)
+          fullResponse += chunk
         }
       )
+
+      // Parse the JSON array of roasts
+      let roastMessages: string[] = []
+      try {
+        // Try to extract JSON array from response (in case there's extra text)
+        const jsonMatch = fullResponse.match(/\[[\s\S]*\]/)
+        if (jsonMatch) {
+          roastMessages = JSON.parse(jsonMatch[0])
+        }
+      } catch (e) {
+        console.error("[Popup] Failed to parse roasts JSON:", e)
+        // Fallback: use the whole response as a single roast
+        roastMessages = [fullResponse]
+      }
+
+      // Pick a random roast to display
+      const randomIndex = Math.floor(Math.random() * roastMessages.length)
+      setGeminiResponse(roastMessages[randomIndex] || fullResponse)
+
+      // Save all roasts to cache
+      await saveCachedRoasts({
+        subscriptionId: wasted.subscription.id,
+        subscriptionName: wasted.subscription.name,
+        daysSinceLastVisit: wasted.daysSinceLastVisit,
+        roastMessages,
+        timestamp: Date.now()
+      })
+      console.log(`[Popup] Saved ${roastMessages.length} roasts to cache`)
     } catch (error) {
       setGeminiResponse(`Error: ${error instanceof Error ? error.message : "Failed to get response"}`)
     } finally {
@@ -345,47 +446,31 @@ They haven't used it in ${wasted.daysSinceLastVisit} days.`
           RoastMySubs
         </h2>
 
+        {/* Targeted Subscription Name */}
+        {targetedSubscription && (
+          <div
+            style={{
+              marginBottom: 8,
+              padding: "6px 12px",
+              background: "#FEF3C7",
+              border: "1px solid #F59E0B",
+              borderRadius: 6,
+              fontSize: 13,
+              fontWeight: 500,
+              color: "#92400E",
+              textAlign: "center"
+            }}>
+            {targetedSubscription}
+          </div>
+        )}
+
         {/* Burny Mascot */}
         <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'center' }}>
           <Burny
             expression={burnyExpression}
-            message={geminiResponse || "Click below to check your Spotify usage!"}
+            message={geminiResponse || (geminiLoading ? "Loading..." : "Checking your subscriptions...")}
             size={150}
           />
-        </div>
-
-        {/* Gemini Test Button */}
-        <div style={{ marginBottom: 16 }}>
-          <button
-            onClick={testGemini}
-            disabled={geminiLoading}
-            style={{
-              padding: "8px 16px",
-              borderRadius: 6,
-              border: "none",
-              background: "#10A37F",
-              color: "white",
-              fontSize: 14,
-              cursor: geminiLoading ? "not-allowed" : "pointer",
-              opacity: geminiLoading ? 0.6 : 1,
-              width: "100%"
-            }}>
-            {geminiLoading ? "Testing Gemini..." : "Test Gemini"}
-          </button>
-          {geminiResponse && (
-            <div
-              style={{
-                marginTop: 8,
-                padding: "8px 12px",
-                background: "#F0F9FF",
-                border: "1px solid #BAE6FD",
-                borderRadius: 6,
-                fontSize: 13,
-                color: "#0C4A6E"
-              }}>
-              {geminiResponse}
-            </div>
-          )}
         </div>
 
         {/* Manage Subscriptions Button */}
@@ -394,9 +479,9 @@ They haven't used it in ${wasted.daysSinceLastVisit} days.`
           style={{
             padding: "8px 16px",
             borderRadius: 6,
-            border: "1px solid #4F46E5",
-            background: "white",
-            color: "#4F46E5",
+            border: "1px solid #F59E0B",
+            background: "#FEF3C7",
+            color: "#92400E",
             fontSize: 14,
             fontWeight: 500,
             cursor: "pointer",
