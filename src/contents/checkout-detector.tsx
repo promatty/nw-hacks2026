@@ -89,7 +89,8 @@ async function fetchPlaidCategorySpending(userId: string, category: string): Pro
     })
 
     if (categorySubscriptions.length === 0) {
-      return null
+      console.log("[RoastMySubs] No Plaid subscriptions for category, falling back to mock data")
+      return fetchMockCategorySpending(userId, category)
     }
 
     // Calculate monthly total
