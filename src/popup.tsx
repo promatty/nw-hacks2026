@@ -289,7 +289,7 @@ days since last used: ${daysSinceLastPlay}`
           overflowY: "auto",
           padding: 16,
           fontFamily: "system-ui, -apple-system, sans-serif",
-          border: "3px solid #F97316"
+          border: "3px solid #F97316",
           background: "#FAFAFA"
         }}>
         {/* Header */}
@@ -448,8 +448,8 @@ days since last used: ${daysSinceLastPlay}`
                 +
               </button>
             </div>
-          )}
-        </div>
+          </>
+        )}
 
         {/* Manage Subscriptions Button */}
         <button
@@ -480,7 +480,7 @@ days since last used: ${daysSinceLastPlay}`
         overflowY: "auto",
         padding: 16,
         fontFamily: "system-ui, -apple-system, sans-serif",
-        border: "3px solid #F97316"
+        border: "3px solid #F97316",
         background: "#FAFAFA"
       }}>
       {/* Header with back button */}
