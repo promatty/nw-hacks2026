@@ -2,6 +2,7 @@ import React from "react"
 import { useEffect, useState } from "react"
 import { initializeGemini, sendPromptWithStreaming } from "~gemini"
 import spotifyData from "./data/spotify-listening-history.json"
+import Burny, { type BurnyExpression } from "./components/Burny"
 
 interface Subscription {
   id: string
@@ -63,6 +64,7 @@ function IndexPopup() {
   const [editUrl, setEditUrl] = useState("")
   const [geminiResponse, setGeminiResponse] = useState("")
   const [geminiLoading, setGeminiLoading] = useState(false)
+  const [burnyExpression, setBurnyExpression] = useState<BurnyExpression>("neutral")
 
   useEffect(() => {
     getUserId().then((id) => {
@@ -185,12 +187,16 @@ function IndexPopup() {
   const testGemini = async () => {
     setGeminiLoading(true)
     setGeminiResponse("")
+    setBurnyExpression("evil")
     try {
       // Check if user has been active recently
       const now = new Date()
       const mostRecentPlay = new Date(spotifyData.items[0]?.played_at || 0)
       const daysSinceLastPlay = Math.floor((now.getTime() - mostRecentPlay.getTime()) / (1000 * 60 * 60 * 24))
       const hasRecentActivity = daysSinceLastPlay <= 7
+
+      // Set expression based on activity
+      setBurnyExpression(hasRecentActivity ? "happy" : "savage")
 
       // Create personalized prompt
       const prompt = `You are a subscription manager assistant with a sassy personality. Your job is to track subscriptions and roast users for ones they don't use.
@@ -232,6 +238,15 @@ days since last used: ${daysSinceLastPlay}`
       <h2 style={{ margin: "0 0 16px 0", fontSize: 18 }}>
         RoastMySubs
       </h2>
+
+      {/* Burny Mascot */}
+      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'center' }}>
+        <Burny
+          expression={burnyExpression}
+          message={geminiResponse || "Click below to check your Spotify usage!"}
+          size={150}
+        />
+      </div>
 
       {/* Gemini Test Button */}
       <div style={{ marginBottom: 16 }}>
