@@ -112,6 +112,26 @@ function IndexPopup() {
     }
   }, [userId])
 
+  // Auto-refresh subscriptions every 3 seconds when in manager view
+  useEffect(() => {
+    if (!userId || view !== "manager") return
+
+    const interval = setInterval(() => {
+      fetchSubscriptions(userId)
+    }, 3000)
+
+    return () => clearInterval(interval)
+  }, [userId, view])
+
+  // Notify background script when subscriptions change
+  const notifySubscriptionsUpdated = () => {
+    try {
+      chrome.runtime?.sendMessage({ type: "SUBSCRIPTIONS_UPDATED" })
+    } catch (e) {
+      // Background script may not be available
+    }
+  }
+
   const handleAdd = async () => {
     if (!newName.trim() || !userId) return
 
@@ -133,6 +153,7 @@ function IndexPopup() {
       setNewName("")
       setNewUrl("")
       await fetchSubscriptions(userId)
+      notifySubscriptionsUpdated()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add")
     } finally {
@@ -151,6 +172,7 @@ function IndexPopup() {
       }
       console.log("[API] DELETE successful")
       await fetchSubscriptions(userId)
+      notifySubscriptionsUpdated()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete")
     }
@@ -179,6 +201,7 @@ function IndexPopup() {
       console.log("[API] EDIT successful")
       setEditing(null)
       await fetchSubscriptions(userId)
+      notifySubscriptionsUpdated()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update")
     }
