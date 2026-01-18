@@ -15,11 +15,11 @@ interface Subscription {
   updated_at: string
 }
 
-interface CachedRoasts {
+interface CachedRoast {
   subscriptionId: string
   subscriptionName: string
-  daysSinceLastVisit: number
-  roastMessages: string[]
+  lastVisit: string
+  roastMessage: string
   timestamp: number
 }
 
@@ -60,7 +60,7 @@ async function getUserId(): Promise<string> {
 }
 
 // Cache helpers for roasts
-async function getCachedRoasts(): Promise<CachedRoasts | null> {
+async function getCachedRoast(): Promise<CachedRoast | null> {
   try {
     if (chrome?.storage?.local) {
       return new Promise((resolve) => {
@@ -77,11 +77,11 @@ async function getCachedRoasts(): Promise<CachedRoasts | null> {
   return cached ? JSON.parse(cached) : null
 }
 
-async function saveCachedRoasts(roasts: CachedRoasts): Promise<void> {
+async function saveCachedRoast(roast: CachedRoast): Promise<void> {
   try {
     if (chrome?.storage?.local) {
       return new Promise((resolve) => {
-        chrome.storage.local.set({ [ROAST_CACHE_KEY]: roasts }, () => {
+        chrome.storage.local.set({ [ROAST_CACHE_KEY]: roast }, () => {
           resolve()
         })
       })
@@ -90,7 +90,7 @@ async function saveCachedRoasts(roasts: CachedRoasts): Promise<void> {
     // chrome.storage.local not available
   }
   // Fallback to localStorage
-  localStorage.setItem(ROAST_CACHE_KEY, JSON.stringify(roasts))
+  localStorage.setItem(ROAST_CACHE_KEY, JSON.stringify(roast))
 }
 
 function IndexPopup() {
@@ -347,20 +347,17 @@ function IndexPopup() {
       }
 
       // Check cache before calling Gemini
-      const cached = await getCachedRoasts()
+      const cached = await getCachedRoast()
       if (
         cached &&
         cached.subscriptionId === wasted.subscription.id &&
-        cached.daysSinceLastVisit === wasted.daysSinceLastVisit &&
-        cached.roastMessages.length > 0
+        cached.lastVisit === wasted.subscription.last_visit
       ) {
-        // Pick a random roast from cache
-        const randomIndex = Math.floor(Math.random() * cached.roastMessages.length)
-        const randomRoast = cached.roastMessages[randomIndex]
-        console.log(`[Popup] Using cached roast ${randomIndex + 1}/${cached.roastMessages.length}`)
+        // Use cached roast
+        console.log(`[Popup] Using cached roast`)
         setBurnyExpression("savage")
         setTargetedSubscription(cached.subscriptionName)
-        setGeminiResponse(randomRoast)
+        setGeminiResponse(cached.roastMessage)
         setGeminiLoading(false)
         return
       }
@@ -369,61 +366,35 @@ function IndexPopup() {
       setBurnyExpression("savage")
       setTargetedSubscription(wasted.subscription.name)
 
-      // Create personalized prompt for 10 roasts
-      const prompt = `You write brutal Twitter roasts. No filter. Think stan twitter meets finance bro energy.
+      // Create personalized prompt for a single roast
+const prompt = `You write a brutal Twitter roast. No filter.
 
-Examples of the vibe:
-- "bestie you haven't opened Netflix in 3 weeks but you'll complain about being broke. the math isn't mathing"
-- "paying for a gym membership you don't use is crazy work. your wallet is getting more of a workout than you"
-- "imagine paying $15/month to ignore Spotify while you watch YouTube ads like a peasant. couldn't be me (it's you)"
-- "that subscription is literally begging you to cancel it. even IT doesn't want your money at this point"
-- "you're basically running a charity for corporations rn. very philanthropic of you bestie"
-
-Roast this person for wasting money on ${wasted.subscription.name}. They haven't touched it in ${wasted.daysSinceLastVisit} days.
+Roast this person for wasting money on ${wasted.subscription.name} despite not even using it.
 
 Rules:
 - Write like you're ratio'ing someone on twitter
-- Use lowercase, "bestie", "ngl", "lowkey", "the way", "not you", "imagine", etc
-- Be unhinged but funny, not mean-spirited
+- You know what ${wasted.subscription.name} is - mock what it's actually for
 - 1-2 sentences max, punchy
-- Generate exactly 10 different roasts
-- Format: Return ONLY a JSON array of 10 strings, nothing else. Example: ["roast1", "roast2", ...]`
+- Return ONLY the roast text, nothing else`
 
-      let fullResponse = ""
+      let roastMessage = ""
       await sendPromptWithStreaming(
         prompt,
         (chunk) => {
-          fullResponse += chunk
+          roastMessage += chunk
+          setGeminiResponse(roastMessage)
         }
       )
 
-      // Parse the JSON array of roasts
-      let roastMessages: string[] = []
-      try {
-        // Try to extract JSON array from response (in case there's extra text)
-        const jsonMatch = fullResponse.match(/\[[\s\S]*\]/)
-        if (jsonMatch) {
-          roastMessages = JSON.parse(jsonMatch[0])
-        }
-      } catch (e) {
-        console.error("[Popup] Failed to parse roasts JSON:", e)
-        // Fallback: use the whole response as a single roast
-        roastMessages = [fullResponse]
-      }
-
-      // Pick a random roast to display
-      const randomIndex = Math.floor(Math.random() * roastMessages.length)
-      setGeminiResponse(roastMessages[randomIndex] || fullResponse)
-
-      // Save all roasts to cache
-      await saveCachedRoasts({
+      // Save roast to cache
+      await saveCachedRoast({
         subscriptionId: wasted.subscription.id,
         subscriptionName: wasted.subscription.name,
-        daysSinceLastVisit: wasted.daysSinceLastVisit,
-        roastMessages,
+        lastVisit: wasted.subscription.last_visit,
+        roastMessage: roastMessage.trim(),
         timestamp: Date.now()
       })
-      console.log(`[Popup] Saved ${roastMessages.length} roasts to cache`)
+      console.log(`[Popup] Saved roast to cache`)
     } catch (error) {
       setGeminiResponse(`Error: ${error instanceof Error ? error.message : "Failed to get response"}`)
     } finally {
