@@ -1,4 +1,6 @@
+import React from "react"
 import { useEffect, useState } from "react"
+import { initializeGemini, sendPromptWithStreaming } from "~gemini"
 
 interface Subscription {
   id: string
@@ -58,11 +60,19 @@ function IndexPopup() {
   const [editing, setEditing] = useState<Subscription | null>(null)
   const [editName, setEditName] = useState("")
   const [editUrl, setEditUrl] = useState("")
+  const [geminiResponse, setGeminiResponse] = useState("")
+  const [geminiLoading, setGeminiLoading] = useState(false)
 
   useEffect(() => {
     getUserId().then((id) => {
       setUserId(id)
     })
+    // Initialize Gemini
+    try {
+      initializeGemini()
+    } catch (error) {
+      console.error("Failed to initialize Gemini:", error)
+    }
   }, [])
 
   const fetchSubscriptions = async (uid: string) => {
@@ -171,6 +181,23 @@ function IndexPopup() {
     }
   }
 
+  const testGemini = async () => {
+    setGeminiLoading(true)
+    setGeminiResponse("")
+    try {
+      await sendPromptWithStreaming(
+        "Tell me a short joke about subscriptions.",
+        (chunk) => {
+          setGeminiResponse((prev) => prev + chunk)
+        }
+      )
+    } catch (error) {
+      setGeminiResponse(`Error: ${error instanceof Error ? error.message : "Failed to get response"}`)
+    } finally {
+      setGeminiLoading(false)
+    }
+  }
+
   return (
     <div
       style={{
@@ -182,6 +209,40 @@ function IndexPopup() {
       <h2 style={{ margin: "0 0 16px 0", fontSize: 18 }}>
         RoastMySubs
       </h2>
+
+      {/* Gemini Test Button */}
+      <div style={{ marginBottom: 16 }}>
+        <button
+          onClick={testGemini}
+          disabled={geminiLoading}
+          style={{
+            padding: "8px 16px",
+            borderRadius: 6,
+            border: "none",
+            background: "#10A37F",
+            color: "white",
+            fontSize: 14,
+            cursor: geminiLoading ? "not-allowed" : "pointer",
+            opacity: geminiLoading ? 0.6 : 1,
+            width: "100%"
+          }}>
+          {geminiLoading ? "Testing Gemini..." : "Test Gemini"}
+        </button>
+        {geminiResponse && (
+          <div
+            style={{
+              marginTop: 8,
+              padding: "8px 12px",
+              background: "#F0F9FF",
+              border: "1px solid #BAE6FD",
+              borderRadius: 6,
+              fontSize: 13,
+              color: "#0C4A6E"
+            }}>
+            {geminiResponse}
+          </div>
+        )}
+      </div>
 
       {/* Add subscription form */}
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
