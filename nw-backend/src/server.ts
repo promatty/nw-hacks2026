@@ -27,6 +27,8 @@ import type {
   RecordVisitRequest,
   PlaidItem,
 } from './types/database.js';
+import { plaidItems, transactions as transactionsDb, plaidUsage } from './db/jsonDb.js';
+import { detectRecurringTransactions, calculateTotals } from './services/recurringDetector.js';
 
 // ============================================================================
 // App Setup
@@ -287,20 +289,14 @@ app.post('/api/plaid/exchange-token', async (req: Request<object, object, Exchan
     // Exchange the public token
     const tokenData = await plaidService.exchangePublicToken(publicToken);
 
-    // Store the access token in Supabase
-    const { error } = await supabase
-      .from('plaid_items')
-      .insert({
-        user_id: userId,
-        access_token: tokenData.accessToken,
-        item_id: tokenData.itemId,
-        institution_id: institutionId,
-        institution_name: institutionName,
-      })
-      .select()
-      .single();
-
-    if (error) throw error;
+    // Store the access token in JSON database
+    plaidItems.insert({
+      user_id: userId,
+      access_token: tokenData.accessToken,
+      item_id: tokenData.itemId,
+      institution_id: institutionId,
+      institution_name: institutionName,
+    });
 
     res.status(201).json({
       itemId: tokenData.itemId,
@@ -314,18 +310,11 @@ app.post('/api/plaid/exchange-token', async (req: Request<object, object, Exchan
 });
 
 // GET /api/plaid/items/:userId - Get all connected Plaid items for a user
-app.get('/api/plaid/items/:userId', async (req: Request, res: Response) => {
+app.get('/api/plaid/items/:userId', (req: Request<{ userId: string; }>, res: Response) => {
   try {
     const { userId } = req.params;
-
-    const { data, error } = await supabase
-      .from('plaid_items')
-      .select('id, user_id, item_id, institution_id, institution_name, created_at')
-      .eq('user_id', userId);
-
-    if (error) throw error;
-
-    res.json(data);
+    const items = plaidItems.findByUserId(userId);
+    res.json(items);
   } catch (error) {
     console.error('Error fetching Plaid items:', error);
     res.status(500).json({ error: (error as Error).message });
@@ -333,18 +322,12 @@ app.get('/api/plaid/items/:userId', async (req: Request, res: Response) => {
 });
 
 // DELETE /api/plaid/items/:itemId - Disconnect a Plaid item
-app.delete('/api/plaid/items/:itemId', async (req: Request, res: Response) => {
+app.delete('/api/plaid/items/:itemId', async (req: Request<{ itemId: string; }>, res: Response) => {
   try {
     const { itemId } = req.params;
 
     // Get the access token for this item
-    const { data: item, error: fetchError } = await supabase
-      .from('plaid_items')
-      .select('access_token')
-      .eq('item_id', itemId)
-      .single();
-
-    if (fetchError) throw fetchError;
+    const item = plaidItems.findByItemId(itemId);
 
     if (!item) {
       res.status(404).json({ error: 'Item not found' });
@@ -355,12 +338,7 @@ app.delete('/api/plaid/items/:itemId', async (req: Request, res: Response) => {
     await plaidService.removeItem(item.access_token);
 
     // Remove from database
-    const { error: deleteError } = await supabase
-      .from('plaid_items')
-      .delete()
-      .eq('item_id', itemId);
-
-    if (deleteError) throw deleteError;
+    plaidItems.delete(itemId);
 
     res.status(204).send();
   } catch (error) {
@@ -369,87 +347,110 @@ app.delete('/api/plaid/items/:itemId', async (req: Request, res: Response) => {
   }
 });
 
+// Helper function to generate demo subscription transactions
+function generateDemoSubscriptions(userId: string, accountId: string) {
+  const subscriptions = [
+    { name: 'NETFLIX.COM', merchant: 'Netflix', amount: 15.99, dayOfMonth: 15 },
+    { name: 'SPOTIFY USA', merchant: 'Spotify', amount: 10.99, dayOfMonth: 12 },
+    { name: 'OPENAI *CHATGPT PLUS', merchant: 'ChatGPT', amount: 20.00, dayOfMonth: 8 },
+    { name: 'AMAZON PRIME MEMBERSHIP', merchant: 'Amazon Prime', amount: 14.99, dayOfMonth: 5 },
+    { name: 'DISNEY PLUS', merchant: 'Disney+', amount: 13.99, dayOfMonth: 18 },
+    { name: 'GOOGLE *YOUTUBE PREMIUM', merchant: 'YouTube', amount: 13.99, dayOfMonth: 10 },
+    { name: 'GITHUB INC', merchant: 'GitHub', amount: 4.00, dayOfMonth: 3 },
+    { name: 'NOTION LABS INC', merchant: 'Notion', amount: 10.00, dayOfMonth: 7 },
+    { name: 'ADOBE CREATIVE CLOUD', merchant: 'Adobe', amount: 54.99, dayOfMonth: 1 },
+    { name: 'PLANET FITNESS', merchant: 'Planet Fitness', amount: 24.99, dayOfMonth: 2 },
+    { name: 'NORDVPN.COM', merchant: 'NordVPN', amount: 12.99, dayOfMonth: 14 },
+    { name: 'HBO MAX', merchant: 'HBO', amount: 15.99, dayOfMonth: 16 },
+  ];
+
+  const transactions: Array<{
+    user_id: string;
+    plaid_transaction_id: string;
+    account_id: string;
+    amount: number;
+    date: string;
+    name: string;
+    merchant_name: string;
+    pending: boolean;
+    payment_channel: string;
+  }> = [];
+
+  const now = new Date();
+
+  // Generate 3 months of transactions for each subscription
+  for (const sub of subscriptions) {
+    for (let monthsAgo = 0; monthsAgo < 3; monthsAgo++) {
+      const date = new Date(now.getFullYear(), now.getMonth() - monthsAgo, sub.dayOfMonth);
+      // Skip if the date is in the future
+      if (date > now) {
+        date.setMonth(date.getMonth() - 1);
+      }
+      const dateStr = date.toISOString().split('T')[0];
+      const merchantKey = sub.merchant.toLowerCase().replace(/[^a-z]/g, '');
+
+      transactions.push({
+        user_id: userId,
+        plaid_transaction_id: `txn-${merchantKey}-${monthsAgo + 1}-${Date.now()}`,
+        account_id: accountId,
+        amount: sub.amount,
+        date: dateStr,
+        name: sub.name,
+        merchant_name: sub.merchant,
+        pending: false,
+        payment_channel: 'online',
+      });
+    }
+  }
+
+  return transactions;
+}
+
 // POST /api/plaid/transactions/sync - Sync transactions for a user
+// In demo mode, this generates fake subscription data instead of using actual Plaid transactions
 app.post('/api/plaid/transactions/sync', async (req: Request<object, object, SyncTransactionsRequest>, res: Response) => {
   try {
-    const { userId, cursor } = req.body;
+    const { userId } = req.body;
 
     if (!userId) {
       res.status(400).json({ error: 'userId is required' });
       return;
     }
 
-    // Get all Plaid items for this user
-    const { data: items, error: itemsError } = await supabase
-      .from('plaid_items')
-      .select('*')
-      .eq('user_id', userId);
-
-    if (itemsError) throw itemsError;
+    // Get all Plaid items for this user from JSON database
+    const items = plaidItems.findByUserIdWithToken(userId);
 
     if (!items || items.length === 0) {
       res.status(404).json({ error: 'No connected bank accounts found' });
       return;
     }
 
-    // Sync transactions for each item
-    const allResults = await Promise.all(
-      items.map(async (item: PlaidItem) => {
-        const syncCursor = cursor || item.cursor || undefined;
-        const result = await plaidService.fetchAllTransactions(item.access_token, syncCursor);
+    // Generate demo subscription transactions instead of fetching from Plaid
+    const item = items[0]; // Use the first connected account
+    const demoAccountId = '7EzkRkMJ91FZGDBqow9qFl6WKQoDreFdovyPW';
 
-        // Update the cursor in the database
-        await supabase
-          .from('plaid_items')
-          .update({ cursor: result.nextCursor, updated_at: new Date().toISOString() })
-          .eq('id', item.id);
+    // Clear existing transactions for this user and insert demo data
+    const existingTransactions = transactionsDb.findAllByUserId(userId);
+    if (existingTransactions.length > 0) {
+      transactionsDb.deleteByPlaidIds(existingTransactions.map(t => t.plaid_transaction_id));
+    }
 
-        // Store transactions in database
-        if (result.added.length > 0) {
-          const transactionsToInsert = result.added.map((t) => ({
-            user_id: userId,
-            plaid_transaction_id: t.transaction_id,
-            account_id: t.account_id,
-            amount: t.amount,
-            date: t.date,
-            name: t.name,
-            merchant_name: t.merchant_name,
-            category: t.category,
-            pending: t.pending,
-            payment_channel: t.payment_channel,
-          }));
-
-          await supabase
-            .from('transactions')
-            .upsert(transactionsToInsert, { onConflict: 'plaid_transaction_id' });
-        }
-
-        // Handle removed transactions
-        if (result.removed.length > 0) {
-          const removedIds = result.removed.map((r) => r.transaction_id);
-          await supabase
-            .from('transactions')
-            .delete()
-            .in('plaid_transaction_id', removedIds);
-        }
-
-        return {
-          itemId: item.item_id,
-          institutionName: item.institution_name,
-          added: result.added.length,
-          modified: result.modified.length,
-          removed: result.removed.length,
-          accounts: result.accounts,
-        };
-      })
-    );
+    const demoTransactions = generateDemoSubscriptions(userId, demoAccountId);
+    transactionsDb.upsert(demoTransactions);
 
     res.json({
-      message: 'Transactions synced successfully',
-      results: allResults,
-      totalAdded: allResults.reduce((sum, r) => sum + r.added, 0),
-      totalModified: allResults.reduce((sum, r) => sum + r.modified, 0),
-      totalRemoved: allResults.reduce((sum, r) => sum + r.removed, 0),
+      message: 'Transactions synced successfully (demo mode)',
+      results: [{
+        itemId: item.item_id,
+        institutionName: item.institution_name,
+        added: demoTransactions.length,
+        modified: 0,
+        removed: existingTransactions.length,
+      }],
+      totalAdded: demoTransactions.length,
+      totalModified: 0,
+      totalRemoved: existingTransactions.length,
+      note: 'Demo subscription data generated for demonstration purposes',
     });
   } catch (error) {
     console.error('Error syncing transactions:', error);
@@ -458,39 +459,21 @@ app.post('/api/plaid/transactions/sync', async (req: Request<object, object, Syn
 });
 
 // GET /api/plaid/transactions/:userId - Get stored transactions for a user
-app.get('/api/plaid/transactions/:userId', async (req: Request, res: Response) => {
+app.get('/api/plaid/transactions/:userId', (req: Request<{ userId: string; }>, res: Response) => {
   try {
     const { userId } = req.params;
     const { startDate, endDate, limit = '100', offset = '0' } = req.query;
 
-    let query = supabase
-      .from('transactions')
-      .select('*')
-      .eq('user_id', userId)
-      .order('date', { ascending: false })
-      .limit(parseInt(limit as string))
-      .range(parseInt(offset as string), parseInt(offset as string) + parseInt(limit as string) - 1);
-
-    if (startDate) {
-      query = query.gte('date', startDate as string);
-    }
-    if (endDate) {
-      query = query.lte('date', endDate as string);
-    }
-
-    const { data, error } = await query;
-
-    if (error) throw error;
-
-    // Get total count
-    const { count } = await supabase
-      .from('transactions')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId);
+    const result = transactionsDb.findByUserId(userId, {
+      startDate: startDate as string | undefined,
+      endDate: endDate as string | undefined,
+      limit: parseInt(limit as string),
+      offset: parseInt(offset as string),
+    });
 
     res.json({
-      transactions: data,
-      total: count,
+      transactions: result.transactions,
+      total: result.total,
       limit: parseInt(limit as string),
       offset: parseInt(offset as string),
     });
@@ -501,60 +484,56 @@ app.get('/api/plaid/transactions/:userId', async (req: Request, res: Response) =
 });
 
 // GET /api/plaid/recurring/:userId - Get recurring transactions (subscriptions) for a user
-app.get('/api/plaid/recurring/:userId', async (req: Request, res: Response) => {
+// In demo mode, uses local detection from stored demo transactions
+app.get('/api/plaid/recurring/:userId', (req: Request<{ userId: string; }>, res: Response) => {
   try {
     const { userId } = req.params;
-    const { accountIds } = req.query;
 
-    // Get all Plaid items for this user
-    const { data: items, error: itemsError } = await supabase
-      .from('plaid_items')
-      .select('*')
-      .eq('user_id', userId);
+    // Use local detection from stored transactions (demo mode)
+    const allTransactions = transactionsDb.findAllByUserId(userId);
 
-    if (itemsError) throw itemsError;
-
-    if (!items || items.length === 0) {
-      res.status(404).json({ error: 'No connected bank accounts found' });
+    if (allTransactions.length === 0) {
+      res.json({
+        subscriptions: [],
+        totalMonthlyAmount: 0,
+        totalAnnualAmount: 0,
+        source: 'local-detection',
+        note: 'No transactions found. Sync transactions first.',
+      });
       return;
     }
 
-    const accountIdArray = accountIds
-      ? (accountIds as string).split(',')
-      : undefined;
+    // Detect recurring transactions locally
+    const subscriptions = detectRecurringTransactions(allTransactions);
+    const totals = calculateTotals(subscriptions);
 
-    // Get recurring transactions for each item
-    const allResults = await Promise.all(
-      items.map(async (item: PlaidItem) => {
-        const result = await plaidService.getRecurringTransactions(
-          item.access_token,
-          accountIdArray
-        );
+    // Merge in usage data (visit_count, total_time_seconds) from plaid_usage
+    const usageData = plaidUsage.findByUserId(userId);
+    const subscriptionsWithUsage = subscriptions.map(sub => {
+      const usage = usageData.find(u =>
+        u.merchant_name.toLowerCase().trim() === (sub.merchant_name || sub.name).toLowerCase().trim()
+      );
+      if (usage) {
         return {
-          itemId: item.item_id,
-          institutionName: item.institution_name,
-          ...plaidService.transformToSubscriptions(result),
+          ...sub,
+          visit_count: usage.visit_count,
+          total_time_seconds: usage.total_time_seconds,
+          last_visit: usage.last_visit,
         };
-      })
-    );
-
-    // Combine all subscriptions
-    const allSubscriptions = allResults.flatMap((r) =>
-      r.subscriptions.map((s) => ({
-        ...s,
-        institutionName: r.institutionName,
-      }))
-    );
-
-    // Calculate combined totals
-    const totalMonthlyAmount = allResults.reduce((sum, r) => sum + r.totalMonthlyAmount, 0);
-    const totalAnnualAmount = allResults.reduce((sum, r) => sum + r.totalAnnualAmount, 0);
+      }
+      return {
+        ...sub,
+        visit_count: 0,
+        total_time_seconds: 0,
+      };
+    });
 
     res.json({
-      subscriptions: allSubscriptions,
-      totalMonthlyAmount: Math.round(totalMonthlyAmount * 100) / 100,
-      totalAnnualAmount: Math.round(totalAnnualAmount * 100) / 100,
-      byInstitution: allResults,
+      subscriptions: subscriptionsWithUsage,
+      totalMonthlyAmount: totals.totalMonthlyAmount,
+      totalAnnualAmount: totals.totalAnnualAmount,
+      source: 'local-detection',
+      transactionsAnalyzed: allTransactions.length,
     });
   } catch (error) {
     console.error('Error fetching recurring transactions:', error);
@@ -562,18 +541,99 @@ app.get('/api/plaid/recurring/:userId', async (req: Request, res: Response) => {
   }
 });
 
+// DELETE /api/plaid/recurring/:userId/:merchantName - Delete a recurring subscription by merchant
+app.delete('/api/plaid/recurring/:userId/:merchantName', (req: Request<{ userId: string; merchantName: string }>, res: Response) => {
+  try {
+    const { userId, merchantName } = req.params;
+    const decodedMerchant = decodeURIComponent(merchantName);
+
+    const deletedCount = transactionsDb.deleteByMerchant(userId, decodedMerchant);
+
+    if (deletedCount === 0) {
+      res.status(404).json({ error: 'No transactions found for this merchant' });
+      return;
+    }
+
+    res.json({
+      success: true,
+      deletedTransactions: deletedCount,
+      merchant: decodedMerchant,
+    });
+  } catch (error) {
+    console.error('Error deleting recurring subscription:', error);
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// PUT /api/plaid/recurring/:userId/:merchantName - Update a recurring subscription's merchant name
+app.put('/api/plaid/recurring/:userId/:merchantName', (req: Request<{ userId: string; merchantName: string }, object, { newName: string }>, res: Response) => {
+  try {
+    const { userId, merchantName } = req.params;
+    const { newName } = req.body;
+    const decodedMerchant = decodeURIComponent(merchantName);
+
+    if (!newName || !newName.trim()) {
+      res.status(400).json({ error: 'newName is required' });
+      return;
+    }
+
+    const updatedCount = transactionsDb.updateMerchant(userId, decodedMerchant, newName.trim());
+
+    if (updatedCount === 0) {
+      res.status(404).json({ error: 'No transactions found for this merchant' });
+      return;
+    }
+
+    res.json({
+      success: true,
+      updatedTransactions: updatedCount,
+      oldName: decodedMerchant,
+      newName: newName.trim(),
+    });
+  } catch (error) {
+    console.error('Error updating recurring subscription:', error);
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// POST /api/plaid/usage/:userId/:merchantName - Update usage stats for a Plaid subscription
+app.post('/api/plaid/usage/:userId/:merchantName', (req: Request<{ userId: string; merchantName: string }, object, { addSeconds?: number; incrementVisit?: boolean }>, res: Response) => {
+  try {
+    const { userId, merchantName } = req.params;
+    const { addSeconds = 0, incrementVisit = false } = req.body;
+    const decodedMerchant = decodeURIComponent(merchantName);
+
+    const usage = plaidUsage.upsert(userId, decodedMerchant, addSeconds, incrementVisit);
+
+    res.json({
+      success: true,
+      usage,
+    });
+  } catch (error) {
+    console.error('Error updating Plaid usage:', error);
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// GET /api/plaid/usage/:userId - Get all usage stats for a user's Plaid subscriptions
+app.get('/api/plaid/usage/:userId', (req: Request<{ userId: string }>, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const usage = plaidUsage.findByUserId(userId);
+    res.json({ usage });
+  } catch (error) {
+    console.error('Error fetching Plaid usage:', error);
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
 // GET /api/plaid/accounts/:userId - Get all connected accounts for a user
-app.get('/api/plaid/accounts/:userId', async (req: Request, res: Response) => {
+app.get('/api/plaid/accounts/:userId', async (req: Request<{ userId: string; }>, res: Response) => {
   try {
     const { userId } = req.params;
 
-    // Get all Plaid items for this user
-    const { data: items, error: itemsError } = await supabase
-      .from('plaid_items')
-      .select('*')
-      .eq('user_id', userId);
-
-    if (itemsError) throw itemsError;
+    // Get all Plaid items for this user from JSON database
+    const items = plaidItems.findByUserIdWithToken(userId);
 
     if (!items || items.length === 0) {
       res.status(404).json({ error: 'No connected bank accounts found' });
@@ -822,6 +882,7 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 app.listen(PORT, async () => {
   console.log(`Server running on http://localhost:${PORT}`);
   console.log(`Plaid environment: ${process.env.PLAID_ENV || 'sandbox'}`);
+  console.log('Using JSON file database for Plaid data (src/db/data.json)');
 
   // Initialize cancellation service
   console.log('Initializing cancellation service...');

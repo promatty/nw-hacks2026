@@ -29,9 +29,9 @@ interface UnifiedSubscription {
   lastDate: string | null
   isActive: boolean
   source: 'manual' | 'plaid'
-  // Manual-specific fields
-  visit_count?: number
-  total_time_seconds?: number
+  // Shared fields (different meaning per source)
+  visit_count?: number  // Manual: site visits, Plaid: transaction count
+  total_time_seconds?: number  // Manual only: time spent on site
   // Original data for editing
   originalManual?: Subscription
 }
@@ -314,14 +314,16 @@ function IndexPopup() {
     // Add Plaid subscriptions first
     for (const plaidSub of plaidSubscriptions) {
       unified.push({
-        id: plaidSub.streamId,
-        name: plaidSub.merchantName,
-        url: null,
+        id: plaidSub.id,
+        name: plaidSub.name || plaidSub.merchant_name,
+        url: plaidSub.url || null,
         amount: plaidSub.amount,
-        frequency: plaidSub.frequency,
-        lastDate: plaidSub.lastDate,
-        isActive: plaidSub.isActive,
-        source: 'plaid'
+        frequency: plaidSub.frequency?.toLowerCase() || 'monthly',
+        lastDate: plaidSub.last_visit || plaidSub.last_date,
+        isActive: plaidSub.is_active,
+        source: 'plaid',
+        visit_count: plaidSub.visit_count || 0,
+        total_time_seconds: plaidSub.total_time_seconds || 0,
       })
     }
 
@@ -500,21 +502,43 @@ function IndexPopup() {
     }
   }
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string, source: 'manual' | 'plaid', merchantName?: string) => {
     if (!userId) return
     try {
-      const response = await fetch(`${API_BASE}/subscriptions/${id}`, {
-        method: "DELETE"
-      })
+      let response: Response
+      if (source === 'plaid' && merchantName) {
+        // Delete Plaid subscription by merchant name
+        response = await fetch(`http://localhost:3000/api/plaid/recurring/${userId}/${encodeURIComponent(merchantName)}`, {
+          method: "DELETE"
+        })
+      } else {
+        // Delete manual subscription by ID
+        response = await fetch(`${API_BASE}/subscriptions/${id}`, {
+          method: "DELETE"
+        })
+      }
       if (!response.ok) {
         throw new Error("Failed to delete subscription")
       }
       console.log("[API] DELETE successful")
-      await fetchSubscriptions(userId)
+      if (source === 'plaid') {
+        await fetchPlaidSubscriptions(userId)
+      } else {
+        await fetchSubscriptions(userId)
+      }
       notifySubscriptionsUpdated()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete")
     }
+  }
+
+  // State for editing unified subscriptions (both manual and plaid)
+  const [editingUnified, setEditingUnified] = useState<UnifiedSubscription | null>(null)
+
+  const openEditUnified = (sub: UnifiedSubscription) => {
+    setEditingUnified(sub)
+    setEditName(sub.name)
+    setEditUrl(sub.url || "")
   }
 
   const openEdit = (sub: Subscription) => {
@@ -540,6 +564,44 @@ function IndexPopup() {
       console.log("[API] EDIT successful")
       setEditing(null)
       await fetchSubscriptions(userId)
+      notifySubscriptionsUpdated()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update")
+    }
+  }
+
+  const handleEditUnified = async () => {
+    if (!editingUnified || !editName.trim() || !userId) return
+    try {
+      if (editingUnified.source === 'plaid') {
+        // Update Plaid subscription by changing merchant name
+        const response = await fetch(`http://localhost:3000/api/plaid/recurring/${userId}/${encodeURIComponent(editingUnified.name)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ newName: editName.trim() })
+        })
+        if (!response.ok) {
+          throw new Error("Failed to update subscription")
+        }
+        console.log("[API] EDIT Plaid subscription successful")
+        await fetchPlaidSubscriptions(userId)
+      } else if (editingUnified.originalManual) {
+        // Update manual subscription
+        const response = await fetch(`${API_BASE}/subscriptions/${editingUnified.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: editName.trim(),
+            url: editUrl.trim() || null
+          })
+        })
+        if (!response.ok) {
+          throw new Error("Failed to update subscription")
+        }
+        console.log("[API] EDIT manual subscription successful")
+        await fetchSubscriptions(userId)
+      }
+      setEditingUnified(null)
       notifySubscriptionsUpdated()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update")
@@ -1021,14 +1083,14 @@ Rules:
                           <span>•</span>
                         </>
                       )}
-                      {sub.source === 'manual' && sub.visit_count !== undefined && (
+                      {sub.visit_count !== undefined && (
                         <>
                           <span>{sub.visit_count} visits</span>
                           <span>•</span>
                         </>
                       )}
                       <span>Last: {formatLastDate(sub.lastDate)}</span>
-                      {sub.source === 'manual' && formatTotalTime(sub.total_time_seconds) && (
+                      {sub.total_time_seconds !== undefined && sub.total_time_seconds > 0 && (
                         <>
                           <span>•</span>
                           <span>Time: {formatTotalTime(sub.total_time_seconds)}</span>
@@ -1058,47 +1120,45 @@ Rules:
                         <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
                       </svg>
                     </button>
-                    {sub.source === 'manual' && sub.originalManual && (
-                      <>
-                        <button
-                          onClick={() => openEdit(sub.originalManual!)}
-                          style={{
-                            width: 32,
-                            height: 32,
-                            borderRadius: 6,
-                            border: "1px solid #4B5563",
-                            background: "#1F2937",
-                            cursor: "pointer",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center"
-                          }}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-                            <path d="m15 5 4 4"/>
-                          </svg>
-                        </button>
-                        <button
-                          onClick={() => handleDelete(sub.id)}
-                          style={{
-                            width: 32,
-                            height: 32,
-                            borderRadius: 6,
-                            border: "none",
-                            background: "#DC2626",
-                            cursor: "pointer",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center"
-                          }}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M3 6h18"/>
-                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
-                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-                          </svg>
-                        </button>
-                      </>
-                    )}
+                    <button
+                      onClick={() => sub.source === 'manual' && sub.originalManual ? openEdit(sub.originalManual) : openEditUnified(sub)}
+                      title="Edit Subscription"
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: 6,
+                        border: "1px solid #4B5563",
+                        background: "#1F2937",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center"
+                      }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                        <path d="m15 5 4 4"/>
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => handleDelete(sub.id, sub.source, sub.name)}
+                      title="Delete Subscription"
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: 6,
+                        border: "none",
+                        background: "#DC2626",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center"
+                      }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 6h18"/>
+                        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                        <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                      </svg>
+                    </button>
                   </div>
                 </div>
                 {/* Debug Toggle for manual subscriptions */}
@@ -1299,6 +1359,112 @@ Rules:
               </button>
               <button
                 onClick={handleEdit}
+                disabled={!editName.trim()}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: 6,
+                  border: "none",
+                  background: "#F97316",
+                  color: "white",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  cursor: !editName.trim() ? "not-allowed" : "pointer",
+                  opacity: !editName.trim() ? 0.6 : 1
+                }}>
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Unified Modal (for both manual and Plaid subscriptions) */}
+      {editingUnified && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0,0,0,0.7)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000
+          }}>
+          <div
+            style={{
+              background: "#1F2937",
+              padding: 20,
+              borderRadius: 8,
+              width: 280,
+              border: "1px solid #374151",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.4)"
+            }}>
+            <h3 style={{ margin: "0 0 16px 0", fontSize: 16, fontWeight: 600, color: "#F9FAFB" }}>
+              Edit Subscription
+            </h3>
+            <input
+              type="text"
+              placeholder="Name"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "8px 12px",
+                borderRadius: 6,
+                border: "1px solid #4B5563",
+                background: "#374151",
+                color: "#F9FAFB",
+                fontSize: 13,
+                marginBottom: 12,
+                boxSizing: "border-box",
+                outline: "none"
+              }}
+            />
+            {editingUnified.source === 'manual' && (
+              <input
+                type="url"
+                placeholder="URL"
+                value={editUrl}
+                onChange={(e) => setEditUrl(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "8px 12px",
+                  borderRadius: 6,
+                  border: "1px solid #4B5563",
+                  background: "#374151",
+                  color: "#F9FAFB",
+                  fontSize: 13,
+                  marginBottom: 16,
+                  boxSizing: "border-box",
+                  outline: "none"
+                }}
+              />
+            )}
+            {editingUnified.source === 'plaid' && (
+              <p style={{ fontSize: 11, color: "#9CA3AF", marginBottom: 16 }}>
+                Note: This will rename all transactions from this merchant.
+              </p>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setEditingUnified(null)}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: 6,
+                  border: "1px solid #4B5563",
+                  background: "#374151",
+                  color: "#E5E7EB",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  cursor: "pointer"
+                }}>
+                Cancel
+              </button>
+              <button
+                onClick={handleEditUnified}
                 disabled={!editName.trim()}
                 style={{
                   padding: "8px 16px",

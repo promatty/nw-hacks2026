@@ -32,13 +32,6 @@ interface Subscription {
   wasted_days_this_month: number;
 }
 
-interface ActiveSession {
-  subscriptionId: string;
-  tabId: number;
-  startTime: number;
-  lastUrl: string;
-}
-
 interface TrackedTab {
   subscriptionId: string;
   domain: string;
@@ -47,7 +40,6 @@ interface TrackedTab {
 
 // In-memory state
 let subscriptions: Subscription[] = [];
-let activeSession: ActiveSession | null = null;
 let userId: string | null = null;
 
 // Track ALL open subscription tabs (tabId -> tracking info)
@@ -83,15 +75,40 @@ async function getUserId(): Promise<string> {
   });
 }
 
-// Fetch subscriptions from API
+// Fetch subscriptions from API (both manual and Plaid)
 async function fetchSubscriptions(): Promise<void> {
   try {
     const uid = await getUserId();
-    const response = await fetch(`${API_BASE}/subscriptions/${uid}`);
-    if (response.ok) {
-      subscriptions = await response.json();
-      console.log("[Background] Loaded", subscriptions.length, "subscriptions");
+
+    // Fetch manual subscriptions
+    const manualResponse = await fetch(`${API_BASE}/subscriptions/${uid}`);
+    let manualSubs: Subscription[] = [];
+    if (manualResponse.ok) {
+      manualSubs = await manualResponse.json();
     }
+
+    // Fetch Plaid subscriptions
+    const plaidResponse = await fetch(`http://localhost:3000/api/plaid/recurring/${uid}`);
+    let plaidSubs: Subscription[] = [];
+    if (plaidResponse.ok) {
+      const plaidData = await plaidResponse.json();
+      // Convert Plaid subscriptions to the same format
+      plaidSubs = (plaidData.subscriptions || []).map((sub: any) => ({
+        id: sub.id,
+        name: sub.name || sub.merchant_name,
+        url: sub.url || null,
+        visit_count: sub.visit_count || 0,
+        last_visit: sub.last_visit || sub.last_date || new Date().toISOString(),
+        total_time_seconds: sub.total_time_seconds || 0,
+        user_id: uid,
+        created_at: sub.last_date || new Date().toISOString(),
+        wasted_days_this_month: 0
+      }));
+    }
+
+    // Combine both lists (manual first, then Plaid)
+    subscriptions = [...manualSubs, ...plaidSubs];
+    console.log("[Background] Loaded", manualSubs.length, "manual +", plaidSubs.length, "Plaid subscriptions");
   } catch (error) {
     console.error("[Background] Failed to fetch subscriptions:", error);
   }
@@ -107,10 +124,17 @@ function extractDomain(url: string): string | null {
   }
 }
 
+// Strip www prefix from domain for comparison
+function stripWww(domain: string): string {
+  return domain.startsWith("www.") ? domain.slice(4) : domain;
+}
+
 // Check if a URL matches a subscription
 function findMatchingSubscription(url: string): Subscription | null {
   const domain = extractDomain(url);
   if (!domain) return null;
+
+  const strippedDomain = stripWww(domain);
 
   for (const sub of subscriptions) {
     if (!sub.url) continue;
@@ -118,12 +142,21 @@ function findMatchingSubscription(url: string): Subscription | null {
     const subDomain = extractDomain(sub.url);
     if (!subDomain) continue;
 
-    // Match if domains are the same or if the current domain is a subdomain
-    if (domain === subDomain || domain.endsWith("." + subDomain)) {
+    const strippedSubDomain = stripWww(subDomain);
+
+    // Match if domains are the same (ignoring www prefix) or if the current domain is a subdomain
+    if (strippedDomain === strippedSubDomain ||
+        strippedDomain.endsWith("." + strippedSubDomain) ||
+        strippedSubDomain.endsWith("." + strippedDomain)) {
       return sub;
     }
   }
   return null;
+}
+
+// Check if a subscription is a Plaid subscription (ID starts with "recurring-")
+function isPlaidSubscription(subscriptionId: string): boolean {
+  return subscriptionId.startsWith("recurring-");
 }
 
 // Update subscription stats via API
@@ -146,11 +179,24 @@ async function updateSubscriptionStats(
       updatedData.visit_count = sub.visit_count + 1;
     }
 
-    const response = await fetch(`${API_BASE}/subscriptions/${subscriptionId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(updatedData)
-    });
+    let response: Response;
+
+    if (isPlaidSubscription(subscriptionId)) {
+      // Use Plaid usage API for Plaid subscriptions
+      const uid = await getUserId();
+      response = await fetch(`http://localhost:3000/api/plaid/usage/${uid}/${encodeURIComponent(sub.name)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ addSeconds, incrementVisit })
+      });
+    } else {
+      // Use manual subscriptions API
+      response = await fetch(`${API_BASE}/subscriptions/${subscriptionId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updatedData)
+      });
+    }
 
     if (response.ok) {
       // Update local cache
@@ -163,7 +209,7 @@ async function updateSubscriptionStats(
       }
       console.log(
         "[Background] Updated stats for subscription:",
-        subscriptionId,
+        sub.name,
         incrementVisit ? "(+1 visit)" : "",
         addSeconds > 0 ? `(+${addSeconds}s)` : ""
       );
@@ -171,20 +217,6 @@ async function updateSubscriptionStats(
   } catch (error) {
     console.error("[Background] Failed to update subscription stats:", error);
   }
-}
-
-// End the current session and save time
-async function endSession(): Promise<void> {
-  if (!activeSession) return;
-
-  const elapsedSeconds = Math.floor((Date.now() - activeSession.startTime) / 1000);
-
-  if (elapsedSeconds > 0) {
-    await updateSubscriptionStats(activeSession.subscriptionId, elapsedSeconds, false);
-  }
-
-  console.log("[Background] Ended session for subscription:", activeSession.subscriptionId);
-  activeSession = null;
 }
 
 // Check if we should count a new visit for this subscription
@@ -233,21 +265,6 @@ function calculateWastedDays(subscription: Subscription): { wastedDays: number; 
   const dayGap = today - lastVisitDay - 1; // Days between, not including visit days
 
   return { wastedDays: Math.max(0, dayGap), shouldReset: false };
-}
-
-// Start a new session for a subscription
-async function startSession(subscription: Subscription, tabId: number, url: string): Promise<void> {
-  // End any existing session first
-  await endSession();
-
-  activeSession = {
-    subscriptionId: subscription.id,
-    tabId,
-    startTime: Date.now(),
-    lastUrl: url
-  };
-
-  console.log("[Background] Started session for subscription:", subscription.name);
 }
 
 // Start tracking a tab with a subscription
@@ -357,43 +374,27 @@ async function flushTimeUpdates(): Promise<void> {
 async function processTabUrl(tabId: number, url: string): Promise<void> {
   // Skip chrome:// and other internal URLs
   if (!url || !url.startsWith("http")) {
-    if (activeSession && activeSession.tabId === tabId) {
-      await endSession();
-    }
+    stopTrackingTab(tabId);
     return;
   }
 
   const matchingSub = findMatchingSubscription(url);
 
   if (matchingSub) {
-    // Check if we're already tracking this subscription on this tab
-    if (activeSession && activeSession.subscriptionId === matchingSub.id && activeSession.tabId === tabId) {
-      // Same subscription, same tab - just update the URL
-      activeSession.lastUrl = url;
-      return;
+    const domain = extractDomain(url);
+    if (domain) {
+      // Use multi-tab tracking system which properly increments visits
+      await startTrackingTab(matchingSub, tabId, domain);
     }
-
-    // New subscription or different tab - start new session
-    await startSession(matchingSub, tabId, url);
   } else {
-    // No matching subscription
-    if (activeSession && activeSession.tabId === tabId) {
-      // Was tracking this tab, but now left the subscription domain
-      await endSession();
-    }
+    // No matching subscription - stop tracking this tab
+    stopTrackingTab(tabId);
   }
 }
 
 // Periodic time save (every 30 seconds) to prevent data loss
 setInterval(async () => {
-  if (activeSession) {
-    const elapsedSeconds = Math.floor((Date.now() - activeSession.startTime) / 1000);
-    if (elapsedSeconds >= 30) {
-      await updateSubscriptionStats(activeSession.subscriptionId, elapsedSeconds, false);
-      // Reset the timer
-      activeSession.startTime = Date.now();
-    }
-  }
+  await flushTimeUpdates();
 }, 30000);
 
 // Scan all open tabs on startup to begin tracking
@@ -437,17 +438,15 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   }
 });
 
-chrome.tabs.onRemoved.addListener(async (tabId) => {
-  if (activeSession && activeSession.tabId === tabId) {
-    await endSession();
-  }
+chrome.tabs.onRemoved.addListener((tabId) => {
+  stopTrackingTab(tabId);
 });
 
 // Handle window focus changes (user switches to another app)
 chrome.windows.onFocusChanged.addListener(async (windowId) => {
   if (windowId === chrome.windows.WINDOW_ID_NONE) {
-    // Browser lost focus - pause tracking
-    await endSession();
+    // Browser lost focus - flush accumulated time
+    await flushTimeUpdates();
   } else {
     // Browser regained focus - check active tab
     try {
