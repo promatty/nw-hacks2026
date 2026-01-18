@@ -435,6 +435,19 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.status === "complete" && tab.url) {
     await processTabUrl(tabId, tab.url);
   }
+  
+  // Auto-close Plaid Link tabs when connection succeeds
+  // Detect by URL pattern - no message passing needed
+  if (tab.url && tab.url.includes('/plaid-link') && tab.url.includes('success=true')) {
+    console.log("[Background] Plaid connection successful, closing tab:", tabId);
+    chrome.tabs.remove(tabId, () => {
+      if (chrome.runtime.lastError) {
+        console.log("[Background] Tab already closed or error:", chrome.runtime.lastError.message);
+      } else {
+        console.log("[Background] Plaid tab closed successfully");
+      }
+    });
+  }
 });
 
 chrome.tabs.onRemoved.addListener(async (tabId) => {
@@ -461,13 +474,54 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
   }
 });
 
+// Track Plaid connection tabs that need to be auto-closed
+const plaidTabsToMonitor: Map<number, { userId: string; startTime: number }> = new Map();
+
 // Listen for subscription changes (when user adds/edits/deletes) and price requests
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "SUBSCRIPTIONS_UPDATED") {
     fetchSubscriptions();
     sendResponse({ success: true });
   }
+  
+  // Handle Plaid tab monitoring request
+  if (message.type === "MONITOR_PLAID_TAB") {
+    const { tabId, userId } = message;
+    plaidTabsToMonitor.set(tabId, { userId, startTime: Date.now() });
+    console.log("[Background] Monitoring Plaid tab:", tabId);
+    sendResponse({ success: true });
+  }
+  
   return true;
+});
+
+// Monitor Plaid tabs for successful connection
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  // Check if this is a Plaid tab we're monitoring
+  if (plaidTabsToMonitor.has(tabId) && tab.url) {
+    // Check if URL indicates success
+    if (tab.url.includes('success=true')) {
+      console.log("[Background] Plaid connection successful, closing tab:", tabId);
+      plaidTabsToMonitor.delete(tabId);
+      
+      // Close the tab
+      chrome.tabs.remove(tabId, () => {
+        if (chrome.runtime.lastError) {
+          console.log("[Background] Tab already closed");
+        } else {
+          console.log("[Background] Plaid tab closed successfully");
+        }
+      });
+    }
+  }
+});
+
+// Clean up monitoring if tab is closed manually
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (plaidTabsToMonitor.has(tabId)) {
+    console.log("[Background] Monitored Plaid tab closed manually:", tabId);
+    plaidTabsToMonitor.delete(tabId);
+  }
 });
 
 // Initialize on startup

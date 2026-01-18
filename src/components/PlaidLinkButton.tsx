@@ -47,40 +47,34 @@ export function PlaidLinkButton({ userId, onSuccess }: PlaidLinkButtonProps) {
       
       const tabId = tab.id;
       
-      // Poll to check if user connected (tab closed = might have completed)
-      const checkInterval = setInterval(async () => {
-        try {
-          // Check if tab is still open
-          chrome.tabs.get(tabId, async (t) => {
-            if (chrome.runtime.lastError) {
-              // Tab was closed - check if connection was successful
-              clearInterval(checkInterval);
-              setLoading(false);
-              
-              // Check if accounts were connected
-              try {
-                const response = await fetch(`${API_BASE}/api/plaid/items/${userId}`);
-                if (response.ok) {
-                  const data = await response.json();
-                  if (data.length > 0) {
-                    setConnected(true);
-                    onSuccess?.();
-                  }
-                }
-              } catch (err) {
-                console.error('Failed to check connection:', err);
+      // Background script will auto-close the tab when it detects success=true in URL
+      // We just need to listen for tab removal to update our state
+      const handleTabRemoved = async (removedTabId: number) => {
+        if (removedTabId === tabId) {
+          chrome.tabs.onRemoved.removeListener(handleTabRemoved);
+          setLoading(false);
+          
+          // Check if accounts were connected
+          try {
+            const response = await fetch(`${API_BASE}/api/plaid/items/${userId}`);
+            if (response.ok) {
+              const data = await response.json();
+              if (data.length > 0) {
+                setConnected(true);
+                onSuccess?.();
               }
             }
-          });
-        } catch (err) {
-          clearInterval(checkInterval);
-          setLoading(false);
+          } catch (err) {
+            console.error('Failed to check connection:', err);
+          }
         }
-      }, 1000);
+      };
       
-      // Clear after 5 minutes max
+      chrome.tabs.onRemoved.addListener(handleTabRemoved);
+      
+      // Clear listener after 5 minutes max
       setTimeout(() => {
-        clearInterval(checkInterval);
+        chrome.tabs.onRemoved.removeListener(handleTabRemoved);
         setLoading(false);
       }, 5 * 60 * 1000);
     });

@@ -277,14 +277,21 @@
           body: JSON.stringify({ userId })
         });
         
-        showStatus('✓ Bank connected successfully! You can close this tab.', 'success');
+        showStatus('✓ Bank connected successfully! Closing...', 'success');
         btn.innerHTML = '✓ Connected!';
         btn.style.background = '#22C55E';
         
-        // Auto-close after 2 seconds
+        // Mark success in URL so extension can detect it
+        window.history.replaceState({}, '', window.location.pathname + '?userId=' + userId + '&success=true');
+        
+        // Try to close (works if opened via window.open)
         setTimeout(() => {
           window.close();
-        }, 2000);
+          // If we're still here after 500ms, show manual close message
+          setTimeout(() => {
+            showStatus('✓ Connected! You can close this tab now.', 'success');
+          }, 500);
+        }, 1000);
         
       } catch (error) {
         console.error('Connection error:', error);
