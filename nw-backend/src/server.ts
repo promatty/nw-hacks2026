@@ -77,6 +77,7 @@ app.get('/', (_req: Request, res: Response) => {
       // Demo endpoints (mock data)
       { method: 'GET', path: '/api/demo/subscriptions', description: 'Get mock streaming subscriptions for demo' },
       { method: 'GET', path: '/api/demo/transactions', description: 'Get mock transactions for demo' },
+      { method: 'GET', path: '/api/spending/category/:userId/:category', description: 'Get monthly spending for a category (mock data)' },
     ],
   });
 });
@@ -635,6 +636,57 @@ app.get('/api/demo/transactions', (req: Request, res: Response) => {
     source: 'mock',
   });
 });
+
+// GET /api/spending/category/:userId/:category - Get monthly spending for a category
+// Uses mock data to show how much user has spent on subscriptions in a category
+app.get('/api/spending/category/:userId/:category', (req: Request, res: Response) => {
+  try {
+    const category = req.params.category as string;
+    const categoryUpper = category.toUpperCase();
+
+    // Filter mock subscriptions by category
+    const categorySubscriptions = MOCK_STREAMING_SUBSCRIPTIONS.filter((sub) =>
+      sub.is_active && sub.category.includes(categoryUpper)
+    );
+
+    // Calculate monthly total for this category
+    const monthlyTotal = categorySubscriptions.reduce((sum, sub) => {
+      switch (sub.frequency) {
+        case 'WEEKLY': return sum + sub.amount * 4.33;
+        case 'BIWEEKLY': return sum + sub.amount * 2.17;
+        case 'ANNUALLY': return sum + sub.amount / 12;
+        default: return sum + sub.amount;
+      }
+    }, 0);
+
+    // Map category to display name
+    const categoryDisplayMap: Record<string, string> = {
+      'ENTERTAINMENT': 'Entertainment',
+      'SOFTWARE': 'Software',
+      'PERSONAL_CARE': 'Personal Care',
+    };
+
+    const subscriptions = categorySubscriptions.map((sub) => ({
+      name: sub.merchant_name,
+      amount: sub.amount,
+      lastDate: sub.last_date,
+      logoUrl: sub.logo_url,
+    }));
+
+    res.json({
+      category: categoryUpper,
+      categoryDisplay: categoryDisplayMap[categoryUpper] || category,
+      monthlyTotal: Math.round(monthlyTotal * 100) / 100,
+      subscriptions,
+      subscriptionCount: categorySubscriptions.length,
+      source: 'mock',
+    });
+  } catch (error) {
+    console.error('Error fetching category spending:', error);
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
 
 // ============================================================================
 // Error Handler
