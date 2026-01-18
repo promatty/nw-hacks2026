@@ -18,17 +18,20 @@ export const CATEGORIES = {
   ENTERTAINMENT: {
     name: 'Entertainment',
     color: '#E11D48', // rose-600
-    icon: '🎬'
+    icon: '🎬',
+    plaidCategories: ['ENTERTAINMENT', 'GENERAL_MERCHANDISE', 'SUBSCRIPTION']
   },
   SOFTWARE: {
     name: 'Software',
     color: '#7C3AED', // violet-600
-    icon: '💻'
+    icon: '💻',
+    plaidCategories: ['SOFTWARE', 'SUBSCRIPTION', 'ONLINE_SERVICES']
   },
   PERSONAL_CARE: {
     name: 'Personal Care',
     color: '#0891B2', // cyan-600
-    icon: '💪'
+    icon: '💪',
+    plaidCategories: ['PERSONAL_CARE', 'GYMS_AND_FITNESS_CENTERS', 'SUBSCRIPTION']
   }
 } as const;
 

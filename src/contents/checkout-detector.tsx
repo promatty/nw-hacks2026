@@ -70,17 +70,75 @@ async function getUserId(): Promise<string> {
   return newId
 }
 
-// Fetch category spending from backend (uses mock data)
-async function fetchCategorySpending(userId: string, category: string): Promise<CategorySpending | null> {
+// Fetch Plaid recurring transactions and convert to category spending
+async function fetchPlaidCategorySpending(userId: string, category: string): Promise<CategorySpending | null> {
+  try {
+    const response = await fetch(`${API_BASE}/plaid/recurring/${userId}`)
+    if (!response.ok) {
+      console.log("No Plaid data available, falling back to mock data")
+      return fetchMockCategorySpending(userId, category)
+    }
+
+    const data = await response.json()
+    const categoryInfo = CATEGORIES[category as CategoryKey] || CATEGORIES.ENTERTAINMENT
+
+    // Filter subscriptions by category
+    const categorySubscriptions = data.subscriptions.filter((sub: any) => {
+      const primaryCategory = sub.category?.[0]?.toUpperCase() || ''
+      return categoryInfo.plaidCategories.includes(primaryCategory)
+    })
+
+    if (categorySubscriptions.length === 0) {
+      return null
+    }
+
+    // Calculate monthly total
+    const monthlyTotal = categorySubscriptions.reduce((total: number, sub: any) => {
+      let monthlyAmount = sub.amount
+      switch (sub.frequency) {
+        case 'weekly':
+          monthlyAmount = sub.amount * 4.33
+          break
+        case 'biweekly':
+          monthlyAmount = sub.amount * 2.17
+          break
+        case 'semi_monthly':
+          monthlyAmount = sub.amount * 2
+          break
+        case 'annually':
+          monthlyAmount = sub.amount / 12
+          break
+      }
+      return total + monthlyAmount
+    }, 0)
+
+    return {
+      category,
+      categoryDisplay: categoryInfo.name,
+      monthlyTotal: Math.round(monthlyTotal * 100) / 100,
+      subscriptions: categorySubscriptions.map((sub: any) => ({
+        name: sub.merchantName,
+        amount: sub.amount,
+        lastDate: sub.lastDate
+      })),
+      subscriptionCount: categorySubscriptions.length
+    }
+  } catch (error) {
+    console.error("Error fetching Plaid category spending:", error)
+    return fetchMockCategorySpending(userId, category)
+  }
+}
+
+// Fallback to mock data
+async function fetchMockCategorySpending(userId: string, category: string): Promise<CategorySpending | null> {
   try {
     const response = await fetch(`${API_BASE}/spending/category/${userId}/${category}`)
     if (!response.ok) {
-      console.error("Failed to fetch category spending:", response.status)
       return null
     }
     return await response.json()
   } catch (error) {
-    console.error("Error fetching category spending:", error)
+    console.error("Error fetching mock category spending:", error)
     return null
   }
 }
@@ -311,9 +369,9 @@ function CheckoutDetector() {
           // sessionStorage not available
         }
 
-        // Fetch spending data
+        // Fetch spending data (Plaid first, fallback to mock)
         const userId = await getUserId()
-        const spendingData = await fetchCategorySpending(userId, matchedPattern.category)
+        const spendingData = await fetchPlaidCategorySpending(userId, matchedPattern.category)
         
         if (spendingData && spendingData.monthlyTotal > 0) {
           setSpending(spendingData)

@@ -4,9 +4,8 @@ import { motion } from "framer-motion"
 import "./style.css"
 import { initializeGemini, sendPromptWithStreaming } from "~gemini"
 import Burny, { type BurnyExpression } from "./components/Burny"
-// TEMPORARILY DISABLED - Plaid integration
-// import { PlaidLinkButton, ConnectedAccounts } from "./components/PlaidLinkButton"
-// import PlaidSubscriptions from "./components/PlaidSubscriptions"
+import { PlaidLinkButton, ConnectedAccounts } from "./components/PlaidLinkButton"
+import PlaidSubscriptions from "./components/PlaidSubscriptions"
 
 interface Subscription {
   id: string
@@ -80,7 +79,7 @@ function getMonthlyCost(subscription: Subscription): number | null {
   return null
 }
 
-function calculateTotalMoneyWasted(subscriptions: Subscription[]): {
+function calculateTotalMoneyWasted(subscriptions: Subscription[], plaidSubs: any[] = []): {
   totalWasted: number
   breakdown: WastedBreakdown[]
 } {
@@ -88,6 +87,7 @@ function calculateTotalMoneyWasted(subscriptions: Subscription[]): {
   const breakdown: WastedBreakdown[] = []
   let totalWasted = 0
 
+  // Calculate for manual subscriptions
   for (const sub of subscriptions) {
     const monthlyCost = getMonthlyCost(sub)
     if (monthlyCost === null) continue
@@ -111,6 +111,55 @@ function calculateTotalMoneyWasted(subscriptions: Subscription[]): {
       totalWasted += wastedAmount
       breakdown.push({
         subscriptionName: sub.name,
+        daysSinceVisit: cappedDays,
+        wastedAmount,
+      })
+    }
+  }
+
+  // Calculate for Plaid subscriptions
+  for (const plaidSub of plaidSubs) {
+    if (!plaidSub.isActive || !plaidSub.amount) continue
+
+    let daysSinceLastCharge: number
+    if (!plaidSub.lastDate) {
+      daysSinceLastCharge = 30
+    } else {
+      const lastCharge = new Date(plaidSub.lastDate)
+      daysSinceLastCharge = Math.floor((now.getTime() - lastCharge.getTime()) / (1000 * 60 * 60 * 24))
+    }
+
+    // Only count as wasted if it's been 5+ days since last charge
+    if (daysSinceLastCharge < 5) continue
+
+    // Cap at 30 days
+    const cappedDays = Math.min(daysSinceLastCharge, 30)
+
+    // Convert to monthly cost based on frequency
+    let monthlyCost = plaidSub.amount
+    switch (plaidSub.frequency) {
+      case 'weekly':
+        monthlyCost = plaidSub.amount * 4.33
+        break
+      case 'biweekly':
+        monthlyCost = plaidSub.amount * 2.17
+        break
+      case 'semi_monthly':
+        monthlyCost = plaidSub.amount * 2
+        break
+      case 'annually':
+        monthlyCost = plaidSub.amount / 12
+        break
+      // 'monthly' is already correct
+    }
+
+    // Calculate waste: (days / 30) * monthly cost
+    const wastedAmount = (cappedDays / 30) * monthlyCost
+
+    if (wastedAmount > 0) {
+      totalWasted += wastedAmount
+      breakdown.push({
+        subscriptionName: plaidSub.merchantName,
         daysSinceVisit: cappedDays,
         wastedAmount,
       })
@@ -215,10 +264,12 @@ function IndexPopup() {
   const [editing, setEditing] = useState<Subscription | null>(null)
   const [editName, setEditName] = useState("")
   const [editUrl, setEditUrl] = useState("")
-  
-  // TEMPORARILY DISABLED - Plaid state
-  // const [activeTab, setActiveTab] = useState<"plaid" | "manual">("plaid")
-  // const [plaidRefreshKey, setPlaidRefreshKey] = useState(0)
+
+  // Plaid state
+  const [activeTab, setActiveTab] = useState<"plaid" | "manual">("plaid")
+  const [plaidRefreshKey, setPlaidRefreshKey] = useState(0)
+  const [plaidSubscriptions, setPlaidSubscriptions] = useState<any[]>([])
+  const [plaidLoading, setPlaidLoading] = useState(false)
 
   // Debug state
   const [debugExpanded, setDebugExpanded] = useState<string | null>(null)
@@ -229,14 +280,14 @@ function IndexPopup() {
     breakdown: WastedBreakdown[]
   } | null>(null)
 
-  // Calculate money wasted when subscriptions change
+  // Calculate money wasted when subscriptions or Plaid subscriptions change
   useEffect(() => {
-    if (subscriptions.length > 0 && !loading) {
-      setMoneyWasted(calculateTotalMoneyWasted(subscriptions))
+    if (!loading && !plaidLoading && (subscriptions.length > 0 || plaidSubscriptions.length > 0)) {
+      setMoneyWasted(calculateTotalMoneyWasted(subscriptions, plaidSubscriptions))
     } else {
       setMoneyWasted(null)
     }
-  }, [subscriptions, loading])
+  }, [subscriptions, plaidSubscriptions, loading, plaidLoading])
 
   useEffect(() => {
     getUserId().then((id) => {
@@ -292,11 +343,11 @@ function IndexPopup() {
   // Auto-trigger roast when subscriptions are loaded (only once per home view visit)
   const [hasAutoRoasted, setHasAutoRoasted] = useState(false)
   useEffect(() => {
-    if (subscriptions.length > 0 && !loading && !hasAutoRoasted && view === "home") {
+    if ((subscriptions.length > 0 || plaidSubscriptions.length > 0) && !loading && !plaidLoading && !hasAutoRoasted && view === "home") {
       setHasAutoRoasted(true)
       testGemini()
     }
-  }, [subscriptions, loading, hasAutoRoasted, view])
+  }, [subscriptions, plaidSubscriptions, loading, plaidLoading, hasAutoRoasted, view])
 
   // Reset hasAutoRoasted and refresh data when returning to home view
   useEffect(() => {
@@ -433,6 +484,7 @@ function IndexPopup() {
 
     let worstOffender: { subscription: Subscription; daysSinceLastVisit: number } | null = null
 
+    // Check manual subscriptions
     for (const sub of subscriptions) {
       if (!sub.last_visit) continue
 
@@ -442,6 +494,35 @@ function IndexPopup() {
       if (daysSince >= WASTE_THRESHOLD_DAYS) {
         if (!worstOffender || daysSince > worstOffender.daysSinceLastVisit) {
           worstOffender = { subscription: sub, daysSinceLastVisit: daysSince }
+        }
+      }
+    }
+
+    // Check Plaid subscriptions (convert to Subscription format)
+    for (const plaidSub of plaidSubscriptions) {
+      if (!plaidSub.isActive || !plaidSub.lastDate) continue
+
+      const lastCharge = new Date(plaidSub.lastDate)
+      const daysSince = Math.floor((now.getTime() - lastCharge.getTime()) / (1000 * 60 * 60 * 24))
+
+      if (daysSince >= WASTE_THRESHOLD_DAYS) {
+        if (!worstOffender || daysSince > worstOffender.daysSinceLastVisit) {
+          // Convert Plaid subscription to Subscription format for roasting
+          worstOffender = {
+            subscription: {
+              id: plaidSub.streamId,
+              name: plaidSub.merchantName,
+              url: null,
+              visit_count: 0,
+              last_visit: plaidSub.lastDate,
+              total_time_seconds: 0,
+              wasted_days_this_month: 0,
+              user_id: userId || '',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            },
+            daysSinceLastVisit: daysSince
+          }
         }
       }
     }
@@ -458,11 +539,29 @@ function IndexPopup() {
       const wasted = findMostWastedSubscription()
 
       if (!wasted) {
-        // No wasted subscriptions - Burny stays quiet
+        // No wasted subscriptions - generate a positive message
         setBurnyExpression("happy")
         setTargetedSubscription(null)
         setDaysSinceLastUsed(null)
-        setGeminiResponse("You're using all your subscriptions! Nothing to roast here.")
+
+        // Generate encouraging message
+        const totalSubs = subscriptions.length + plaidSubscriptions.length
+        const prompt = `You're shocked that someone is actually using their subscriptions properly for once.
+
+The user has ${totalSubs} subscription${totalSubs !== 1 ? 's' : ''} and they're using all of them appropriately!
+
+Rules:
+- Keep it short and exactly one sentence.
+- Be sarcastic and witty
+- Act surprised/impressed that they're not wasting money
+
+Write your witty compliment:`
+
+        let fullResponse = ""
+        await sendPromptWithStreaming(prompt, (chunk) => {
+          fullResponse += chunk
+          setGeminiResponse(fullResponse)
+        })
         setGeminiLoading(false)
         return
       }
@@ -476,7 +575,7 @@ function IndexPopup() {
       ) {
         // Use cached roast
         console.log(`[Popup] Using cached roast`)
-        setBurnyExpression("savage")
+        setBurnyExpression("angry")
         setTargetedSubscription(cached.subscriptionName)
         setDaysSinceLastUsed(wasted.daysSinceLastVisit)
         setGeminiResponse(cached.roastMessage)
@@ -484,8 +583,8 @@ function IndexPopup() {
         return
       }
 
-      // Set savage expression for roasting
-      setBurnyExpression("savage")
+      // Set angry expression for roasting
+      setBurnyExpression("angry")
       setTargetedSubscription(wasted.subscription.name)
       setDaysSinceLastUsed(wasted.daysSinceLastVisit)
 
@@ -525,11 +624,39 @@ Rules:
     }
   }
 
-  // TEMPORARILY DISABLED - Plaid
-  // const handlePlaidSuccess = () => {
-  //   setPlaidRefreshKey(prev => prev + 1)
-  //   setBurnyExpression("happy")
-  // }
+  // Fetch Plaid subscriptions
+  const fetchPlaidSubscriptions = async (uid: string) => {
+    try {
+      setPlaidLoading(true)
+      const response = await fetch(`http://localhost:3000/api/plaid/recurring/${uid}`)
+      if (response.ok) {
+        const data = await response.json()
+        setPlaidSubscriptions(data.subscriptions || [])
+      } else {
+        setPlaidSubscriptions([])
+      }
+    } catch (err) {
+      console.error('Failed to fetch Plaid subscriptions:', err)
+      setPlaidSubscriptions([])
+    } finally {
+      setPlaidLoading(false)
+    }
+  }
+
+  const handlePlaidSuccess = () => {
+    setPlaidRefreshKey(prev => prev + 1)
+    if (userId) {
+      fetchPlaidSubscriptions(userId)
+    }
+    setBurnyExpression("happy")
+  }
+
+  // Fetch Plaid subscriptions on mount and when refreshKey changes
+  useEffect(() => {
+    if (userId) {
+      fetchPlaidSubscriptions(userId)
+    }
+  }, [userId, plaidRefreshKey])
 
   // Render home view
   if (view === "home") {
@@ -677,6 +804,50 @@ Rules:
         </h2>
       </div>
 
+      {/* Tab switcher */}
+      <div style={{
+        display: "flex",
+        gap: 8,
+        marginBottom: 16,
+        padding: 4,
+        background: "#374151",
+        borderRadius: 8,
+        border: "1px solid #4B5563"
+      }}>
+        <button
+          onClick={() => setActiveTab("plaid")}
+          style={{
+            flex: 1,
+            padding: "8px 12px",
+            borderRadius: 6,
+            border: "none",
+            background: activeTab === "plaid" ? "#F97316" : "transparent",
+            color: activeTab === "plaid" ? "#FFFFFF" : "#9CA3AF",
+            fontSize: 13,
+            fontWeight: 500,
+            cursor: "pointer",
+            transition: "all 0.2s"
+          }}>
+          Auto-Detected ({plaidSubscriptions.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("manual")}
+          style={{
+            flex: 1,
+            padding: "8px 12px",
+            borderRadius: 6,
+            border: "none",
+            background: activeTab === "manual" ? "#F97316" : "transparent",
+            color: activeTab === "manual" ? "#FFFFFF" : "#9CA3AF",
+            fontSize: 13,
+            fontWeight: 500,
+            cursor: "pointer",
+            transition: "all 0.2s"
+          }}>
+          Manual ({subscriptions.length})
+        </button>
+      </div>
+
       {/* Error message */}
       {error && (
         <div
@@ -692,20 +863,46 @@ Rules:
         </div>
       )}
 
-      {/* Subscriptions list */}
-      <div>
-        <h3 style={{ margin: "0 0 12px 0", fontSize: 14, fontWeight: 500, color: "#D1D5DB" }}>
-          Your Subscriptions
-        </h3>
-        {loading ? (
-          <div style={{ textAlign: "center", color: "#9CA3AF", padding: 20, fontSize: 13 }}>
-            Loading...
-          </div>
-        ) : subscriptions.length === 0 ? (
-          <div style={{ textAlign: "center", color: "#9CA3AF", padding: 20, fontSize: 13 }}>
-            No subscriptions yet. Add one below!
-          </div>
-        ) : (
+      {/* Plaid Tab Content */}
+      {activeTab === "plaid" && (
+        <div>
+          <h3 style={{ margin: "0 0 12px 0", fontSize: 14, fontWeight: 500, color: "#D1D5DB" }}>
+            Bank-Detected Subscriptions
+          </h3>
+
+          {/* Plaid Link Button */}
+          {userId && (
+            <div style={{ marginBottom: 16 }}>
+              <PlaidLinkButton userId={userId} onSuccess={handlePlaidSuccess} />
+            </div>
+          )}
+
+          {/* Plaid Subscriptions */}
+          {userId && (
+            <PlaidSubscriptions
+              key={plaidRefreshKey}
+              userId={userId}
+              useMockData={false}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Manual Tab Content */}
+      {activeTab === "manual" && (
+        <div>
+          <h3 style={{ margin: "0 0 12px 0", fontSize: 14, fontWeight: 500, color: "#D1D5DB" }}>
+            Manually Tracked Subscriptions
+          </h3>
+          {loading ? (
+            <div style={{ textAlign: "center", color: "#9CA3AF", padding: 20, fontSize: 13 }}>
+              Loading...
+            </div>
+          ) : subscriptions.length === 0 ? (
+            <div style={{ textAlign: "center", color: "#9CA3AF", padding: 20, fontSize: 13 }}>
+              No subscriptions yet. Add one below!
+            </div>
+          ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {subscriptions.map((sub) => {
               // Format last visit
@@ -871,10 +1068,9 @@ Rules:
             })}
           </div>
         )}
-      </div>
 
-      {/* Add subscription form */}
-      <div style={{ marginTop: 16, padding: 12, background: "#374151", borderRadius: 6, border: "1px solid #4B5563" }}>
+        {/* Add subscription form */}
+        <div style={{ marginTop: 16, padding: 12, background: "#374151", borderRadius: 6, border: "1px solid #4B5563" }}>
         <h3 style={{ margin: "0 0 12px 0", fontSize: 14, fontWeight: 500, color: "#D1D5DB" }}>
           Add New Subscription
         </h3>
@@ -931,6 +1127,8 @@ Rules:
           </button>
         </div>
       </div>
+      </div>
+      )}
 
       {/* Edit Modal */}
       {editing && (
