@@ -1,6 +1,7 @@
 import type { PlasmoCSConfig } from "plasmo"
 import React, { useEffect, useState } from "react"
 import { detectCheckoutPage, CATEGORIES, type CheckoutPattern, type CategoryKey } from "~data/checkout-patterns"
+import Burny from "~components/Burny"
 
 // Plasmo content script configuration
 export const config: PlasmoCSConfig = {
@@ -137,10 +138,12 @@ function CheckoutWarningOverlay({
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: "24px"
+              fontSize: "24px",
+              fontWeight: "700",
+              color: "#D97706"
             }}
           >
-            ⚠️
+            !
           </div>
           <div>
             <h2 style={{ margin: 0, fontSize: "18px", fontWeight: "600", color: "#111827" }}>
@@ -152,30 +155,13 @@ function CheckoutWarningOverlay({
           </div>
         </div>
 
-        {/* Category spending card */}
-        <div
-          style={{
-            backgroundColor: "#FFF7ED",
-            borderRadius: "12px",
-            padding: "16px",
-            marginBottom: "16px",
-            border: `2px solid #F97316`
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-            <span style={{ fontSize: "20px" }}>{categoryInfo.icon}</span>
-            <span style={{ fontSize: "14px", fontWeight: "500", color: categoryInfo.color }}>
-              {categoryInfo.name} Spending This Month
-            </span>
-          </div>
-          
-          <div style={{ fontSize: "36px", fontWeight: "700", color: "#111827", marginBottom: "8px" }}>
-            ${spending.monthlyTotal.toFixed(2)}
-          </div>
-          
-          <p style={{ fontSize: "13px", color: "#6B7280", margin: 0 }}>
-            You already have {spending.subscriptionCount} active subscription{spending.subscriptionCount !== 1 ? 's' : ''} in this category
-          </p>
+        {/* Burny spending message */}
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: "16px" }}>
+          <Burny
+            expression="angry"
+            message={`You've spent $${spending.monthlyTotal.toFixed(2)} on ${categoryInfo.name.toLowerCase()} this month! You already have ${spending.subscriptionCount} subscription${spending.subscriptionCount !== 1 ? 's' : ''}.`}
+            size={150}
+          />
         </div>
 
         {/* Existing subscriptions list */}
