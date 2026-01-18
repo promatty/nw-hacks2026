@@ -1,6 +1,7 @@
 import type { PlasmoCSConfig } from "plasmo"
 import React, { useEffect, useState } from "react"
 import { detectCheckoutPage, CATEGORIES, type CheckoutPattern, type CategoryKey } from "~data/checkout-patterns"
+import Burny from "~components/Burny"
 
 // Plasmo content script configuration
 export const config: PlasmoCSConfig = {
@@ -115,13 +116,13 @@ function CheckoutWarningOverlay({
     >
       <div
         style={{
-          backgroundColor: "#1F2937",
+          backgroundColor: "#FFFFFF",
           borderRadius: "16px",
           padding: "24px",
           maxWidth: "420px",
           width: "90%",
-          boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)",
-          border: "1px solid #374151",
+          boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+          border: "3px solid #F97316",
           animation: "slideIn 0.3s ease-out"
         }}
         onClick={(e) => e.stopPropagation()}
@@ -137,51 +138,36 @@ function CheckoutWarningOverlay({
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: "24px"
+              fontSize: "24px",
+              fontWeight: "700",
+              color: "#D97706"
             }}
           >
-            ⚠️
+            !
           </div>
           <div>
-            <h2 style={{ margin: 0, fontSize: "18px", fontWeight: "600", color: "#F9FAFB" }}>
-              Hold up! 💸
+            <h2 style={{ margin: 0, fontSize: "18px", fontWeight: "600", color: "#111827" }}>
+              Hold up!
             </h2>
-            <p style={{ margin: 0, fontSize: "14px", color: "#9CA3AF" }}>
+            <p style={{ margin: 0, fontSize: "14px", color: "#6B7280" }}>
               Before you subscribe to {pattern.service}...
             </p>
           </div>
         </div>
 
-        {/* Category spending card */}
-        <div
-          style={{
-            backgroundColor: "#111827",
-            borderRadius: "12px",
-            padding: "16px",
-            marginBottom: "16px",
-            border: `2px solid ${categoryInfo.color}`
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-            <span style={{ fontSize: "20px" }}>{categoryInfo.icon}</span>
-            <span style={{ fontSize: "14px", fontWeight: "500", color: categoryInfo.color }}>
-              {categoryInfo.name} Spending This Month
-            </span>
-          </div>
-          
-          <div style={{ fontSize: "36px", fontWeight: "700", color: "#F9FAFB", marginBottom: "8px" }}>
-            ${spending.monthlyTotal.toFixed(2)}
-          </div>
-          
-          <p style={{ fontSize: "13px", color: "#9CA3AF", margin: 0 }}>
-            You already have {spending.subscriptionCount} active subscription{spending.subscriptionCount !== 1 ? 's' : ''} in this category
-          </p>
+        {/* Burny spending message */}
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: "16px" }}>
+          <Burny
+            expression="angry"
+            message={`You've spent $${spending.monthlyTotal.toFixed(2)} on ${categoryInfo.name.toLowerCase()} this month! You already have ${spending.subscriptionCount} subscription${spending.subscriptionCount !== 1 ? 's' : ''}.`}
+            size={150}
+          />
         </div>
 
         {/* Existing subscriptions list */}
         {spending.subscriptions.length > 0 && (
           <div style={{ marginBottom: "16px" }}>
-            <p style={{ fontSize: "12px", fontWeight: "500", color: "#6B7280", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+            <p style={{ fontSize: "12px", fontWeight: "500", color: "#9CA3AF", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
               Your current {pattern.categoryDisplay.toLowerCase()} subscriptions:
             </p>
             <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
@@ -193,13 +179,13 @@ function CheckoutWarningOverlay({
                     justifyContent: "space-between",
                     alignItems: "center",
                     padding: "8px 12px",
-                    backgroundColor: "#1F2937",
+                    backgroundColor: "#F9FAFB",
                     borderRadius: "8px",
-                    border: "1px solid #374151"
+                    border: "1px solid #E5E7EB"
                   }}
                 >
-                  <span style={{ fontSize: "14px", color: "#E5E7EB" }}>{sub.name}</span>
-                  <span style={{ fontSize: "14px", fontWeight: "600", color: "#F9FAFB" }}>
+                  <span style={{ fontSize: "14px", color: "#374151" }}>{sub.name}</span>
+                  <span style={{ fontSize: "14px", fontWeight: "600", color: "#111827" }}>
                     ${sub.amount.toFixed(2)}/mo
                   </span>
                 </div>
@@ -221,31 +207,33 @@ function CheckoutWarningOverlay({
               flex: 1,
               padding: "12px 16px",
               borderRadius: "8px",
-              border: "1px solid #4B5563",
+              border: "1px solid #E5E7EB",
               backgroundColor: "transparent",
-              color: "#E5E7EB",
+              color: "#374151",
               fontSize: "14px",
               fontWeight: "500",
               cursor: "pointer",
               transition: "all 0.2s"
             }}
             onMouseOver={(e) => {
-              e.currentTarget.style.backgroundColor = "#374151"
+              e.currentTarget.style.backgroundColor = "#F3F4F6"
             }}
             onMouseOut={(e) => {
               e.currentTarget.style.backgroundColor = "transparent"
             }}
           >
-            I'll think about it
+            I'll waste money
           </button>
           <button
-            onClick={onDismiss}
+            onClick={() => {
+              chrome.runtime.sendMessage({ action: "closeTab" })
+            }}
             style={{
               flex: 1,
               padding: "12px 16px",
               borderRadius: "8px",
               border: "none",
-              backgroundColor: categoryInfo.color,
+              backgroundColor: "#F97316",
               color: "#FFFFFF",
               fontSize: "14px",
               fontWeight: "500",
@@ -259,7 +247,7 @@ function CheckoutWarningOverlay({
               e.currentTarget.style.opacity = "1"
             }}
           >
-            Continue anyway
+            Close this tab
           </button>
         </div>
 
